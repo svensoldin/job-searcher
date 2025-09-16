@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Job Hunter - Weekly Report</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #007acc;
+            padding-bottom: 20px;
+        }
+        .header h1 {
+            color: #007acc;
+            margin: 0;
+            font-size: 28px;
+        }
+        .summary {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 30px;
+        }
+        .summary h2 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat {
+            text-align: center;
+            padding: 15px;
+            background-color: white;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            min-width: 120px;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007acc;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+        .jobs-section h2 {
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 10px;
+        }
+        .job-card {
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background-color: #fff;
+        }
+        .job-header {
+            display: flex;
+            justify-content: between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .job-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007acc;
+            margin: 0;
+            flex-grow: 1;
+        }
+        .job-score {
+            background-color: #28a745;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            margin-left: 15px;
+        }
+        .job-score.good { background-color: #17a2b8; }
+        .job-score.fair { background-color: #ffc107; color: #333; }
+        .job-score.poor { background-color: #dc3545; }
+        .job-meta {
+            color: #6c757d;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        .job-meta span {
+            margin-right: 15px;
+        }
+        .highlights, .concerns {
+            margin: 10px 0;
+        }
+        .highlights ul, .concerns ul {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+        .highlights li { color: #28a745; }
+        .concerns li { color: #dc3545; }
+        .highlights h4 { color: #28a745; margin: 0; }
+        .concerns h4 { color: #dc3545; margin: 0; }
+        .apply-button {
+            display: inline-block;
+            background-color: #007acc;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .apply-button:hover {
+            background-color: #0056b3;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .no-jobs {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .no-jobs h3 {
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 AI Job Hunter</h1>
+            <p>Weekly Job Report - {{summary.date}}</p>
+        </div>
+
+        <div class="summary">
+            <h2>📊 Search Summary</h2>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-number">{{summary.totalJobs}}</div>
+                    <div class="stat-label">Total Jobs</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">{{summary.averageScore}}</div>
+                    <div class="stat-label">Avg Score</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">{{summary.excellent}}</div>
+                    <div class="stat-label">Excellent (80+)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">{{summary.good}}</div>
+                    <div class="stat-label">Good (60-79)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">{{summary.fair}}</div>
+                    <div class="stat-label">Fair (40-59)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">{{summary.poor}}</div>
+                    <div class="stat-label">Poor (<40)</div>
+                </div>
+            </div>
+        </div>
+
+        {{#if hasJobs}}
+        <div class="jobs-section">
+            <h2>🎯 Top Job Matches</h2>
+            
+            {{#each topJobs}}
+            <div class="job-card">
+                <div class="job-header">
+                    <h3 class="job-title">{{title}}</h3>
+                    <span class="job-score {{#if (gte score 80)}}excellent{{else}}{{#if (gte score 60)}}good{{else}}{{#if (gte score 40)}}fair{{else}}poor{{/if}}{{/if}}{{/if}}">
+                        {{score}}/100
+                    </span>
+                </div>
+                
+                <div class="job-meta">
+                    <span><strong>🏢 Company:</strong> {{company}}</span>
+                    <span><strong>📍 Location:</strong> {{location}}</span>
+                    <span><strong>🔗 Source:</strong> {{source}}</span>
+                </div>
+
+                {{#if highlights.length}}
+                <div class="highlights">
+                    <h4>✅ Highlights:</h4>
+                    <ul>
+                        {{#each highlights}}
+                        <li>{{this}}</li>
+                        {{/each}}
+                    </ul>
+                </div>
+                {{/if}}
+
+                {{#if concerns.length}}
+                <div class="concerns">
+                    <h4>⚠️ Concerns:</h4>
+                    <ul>
+                        {{#each concerns}}
+                        <li>{{this}}</li>
+                        {{/each}}
+                    </ul>
+                </div>
+                {{/if}}
+
+                {{#if url}}
+                <a href="{{url}}" class="apply-button" target="_blank">View Job →</a>
+                {{/if}}
+            </div>
+            {{/each}}
+        </div>
+        {{else}}
+        <div class="no-jobs">
+            <h3>🔍 No Jobs Found</h3>
+            <p>No jobs were found matching your criteria this week.</p>
+            <p><strong>Consider:</strong></p>
+            <ul style="text-align: left; display: inline-block;">
+                <li>Adjusting your search keywords</li>
+                <li>Expanding your location preferences</li>
+                <li>Reviewing your required skills</li>
+                <li>Broadening your industry preferences</li>
+            </ul>
+        </div>
+        {{/if}}
+
+        <div class="footer">
+            <p>🚀 Keep pushing forward! Your next great opportunity is out there.</p>
+            <p><em>This report was generated automatically by AI Job Hunter</em></p>
+        </div>
+    </div>
+</body>
+</html>
