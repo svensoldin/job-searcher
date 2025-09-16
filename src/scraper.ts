@@ -1,5 +1,6 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { logger } from './utils/logger.js';
+import { saveJobs } from './database.js';
 import type { JobPosting, SearchParams } from './types.js';
 
 /**
@@ -70,6 +71,7 @@ export const scrapeLinkedIn = async (
             ? companyElement.textContent?.trim() || ''
             : '',
           url: linkElement ? (linkElement as HTMLAnchorElement).href : '',
+          source: 'linkedin',
         };
       });
     });
@@ -99,33 +101,78 @@ export const scrapeIndeed = async (
     const page: Page = await browser.newPage();
     await page.goto(url, { waitUntil: 'networkidle2' });
 
-    // Wait for job listings to load
-    await page.waitForSelector('[data-jk]', { timeout: 10000 });
+    // Wait for job listings to load with multiple selectors as fallbacks
+    try {
+      await page.waitForSelector(
+        '[data-jk], .job_seen_beacon, .jobsearch-SerpJobCard, .slider_container .slider_item',
+        { timeout: 10000 }
+      );
+    } catch (selectorError) {
+      logger.warn('Primary selectors not found, trying alternative approach');
+      await page.waitForSelector('body', { timeout: 5000 });
+    }
 
     const jobs: JobPosting[] = await page.evaluate(() => {
-      const jobElements = document.querySelectorAll('[data-jk]');
-      return Array.from(jobElements).map((element) => {
-        const titleElement = element.querySelector('[data-testid="job-title"]');
-        const companyElement = element.querySelector(
-          '[data-testid="company-name"]'
-        );
-        const locationElement = element.querySelector(
-          '[data-testid="job-location"]'
-        );
-        const linkElement = element.querySelector('h2 a');
+      // Try multiple selector strategies for Indeed's changing layout
+      let jobElements: NodeListOf<Element> | null = null;
 
-        return {
-          title: titleElement ? titleElement.textContent?.trim() || '' : '',
-          company: companyElement
-            ? companyElement.textContent?.trim() || ''
-            : '',
-          url: linkElement
-            ? `https://www.indeed.com${(
-                linkElement as HTMLAnchorElement
-              ).getAttribute('href')}`
-            : '',
-        };
-      });
+      // Strategy 1: data-jk attribute (older layout)
+      jobElements = document.querySelectorAll('[data-jk]');
+
+      // Strategy 2: job_seen_beacon class (common layout)
+      if (jobElements.length === 0) {
+        jobElements = document.querySelectorAll('.job_seen_beacon');
+      }
+
+      // Strategy 3: jobsearch-SerpJobCard (another layout)
+      if (jobElements.length === 0) {
+        jobElements = document.querySelectorAll('.jobsearch-SerpJobCard');
+      }
+
+      // Strategy 4: slider items (newer layout)
+      if (jobElements.length === 0) {
+        jobElements = document.querySelectorAll(
+          '.slider_container .slider_item'
+        );
+      }
+
+      return Array.from(jobElements)
+        .map((element) => {
+          // Try multiple selector patterns for job title
+          let titleElement =
+            element.querySelector('[data-testid="job-title"]') ||
+            element.querySelector('.jobTitle a span') ||
+            element.querySelector('h2 a span') ||
+            element.querySelector('.jobTitle span') ||
+            element.querySelector('h2.jobTitle a');
+
+          // Try multiple selector patterns for company name
+          let companyElement =
+            element.querySelector('[data-testid="company-name"]') ||
+            element.querySelector('.companyName') ||
+            element.querySelector('[data-testid="company-name"] a') ||
+            element.querySelector('span.companyName a');
+
+          // Try multiple selector patterns for job link
+          let linkElement =
+            element.querySelector('h2 a') ||
+            element.querySelector('.jobTitle a') ||
+            element.querySelector('[data-jk] h2 a');
+
+          return {
+            title: titleElement ? titleElement.textContent?.trim() || '' : '',
+            company: companyElement
+              ? companyElement.textContent?.trim() || ''
+              : '',
+            url: linkElement
+              ? `https://www.indeed.com${
+                  (linkElement as HTMLAnchorElement).getAttribute('href') || ''
+                }`
+              : '',
+            source: 'indeed',
+          };
+        })
+        .filter((job) => job.title && job.company); // Filter out empty results
     });
 
     await page.close();
@@ -161,11 +208,33 @@ export const getJobDescription = async (
         (el) => el.textContent?.trim() || ''
       );
     } else if (jobUrl.includes('indeed.com')) {
-      await page.waitForSelector('#jobDescriptionText', { timeout: 5000 });
-      description = await page.$eval(
-        '#jobDescriptionText',
-        (el) => el.textContent?.trim() || ''
-      );
+      // Try multiple selectors for job description
+      try {
+        await page.waitForSelector(
+          '#jobDescriptionText, .jobsearch-jobDescriptionText, [data-testid="jobsearch-JobComponent-description"]',
+          { timeout: 5000 }
+        );
+
+        // Try different selectors in order of preference
+        const descriptionElement =
+          (await page.$('#jobDescriptionText')) ||
+          (await page.$('.jobsearch-jobDescriptionText')) ||
+          (await page.$(
+            '[data-testid="jobsearch-JobComponent-description"]'
+          )) ||
+          (await page.$('.jobDescriptionContent'));
+
+        if (descriptionElement) {
+          description = await page.evaluate(
+            (el) => el.textContent?.trim() || '',
+            descriptionElement
+          );
+        }
+      } catch (selectorError) {
+        logger.warn(
+          `Could not find job description with standard selectors for ${jobUrl}`
+        );
+      }
     }
 
     await page.close();
@@ -217,7 +286,44 @@ export const enrichJobsWithDescriptions = async (
 };
 
 /**
- * Search for jobs across multiple platforms
+ * Search for jobs across multiple platforms and save to database
+ */
+export const scrapeAndSaveJobs = async (
+  searchParams: SearchParams
+): Promise<number> => {
+  const browser = await createBrowser();
+
+  try {
+    // Scrape from multiple sources
+    const [linkedInJobs, indeedJobs] = await Promise.all([
+      scrapeLinkedIn(browser, searchParams),
+      scrapeIndeed(browser, searchParams),
+    ]);
+
+    const allJobs = [...linkedInJobs, ...indeedJobs];
+
+    // Remove duplicates
+    const uniqueJobs = removeDuplicateJobs(allJobs);
+
+    logger.info(`Found ${uniqueJobs.length} unique jobs after deduplication`);
+
+    // Fetch detailed descriptions for all jobs
+    const enrichedJobs = await enrichJobsWithDescriptions(browser, uniqueJobs);
+
+    // Save to database
+    const savedCount = await saveJobs(enrichedJobs);
+
+    return savedCount;
+  } catch (error) {
+    logger.error('Error in job scraping and saving:', error);
+    throw error;
+  } finally {
+    await closeBrowser(browser);
+  }
+};
+
+/**
+ * Search for jobs across multiple platforms (legacy function)
  */
 export const searchJobs = async (
   searchParams: SearchParams
@@ -259,4 +365,5 @@ export default {
   removeDuplicateJobs,
   enrichJobsWithDescriptions,
   searchJobs,
+  scrapeAndSaveJobs,
 };

@@ -8,6 +8,12 @@ export interface JobPosting {
   url: string;
   description?: string;
   score?: number;
+  // Database fields
+  _id?: string;
+  scraped_at?: Date;
+  analysis_status?: 'pending' | 'analyzed' | 'failed';
+  source?: string;
+  hash?: string;
 }
 
 export interface SearchParams {

@@ -2,7 +2,11 @@ import cron from 'node-cron';
 import { Transporter } from 'nodemailer';
 import OpenAI from 'openai';
 
-import { analyzeJobs, createOpenAIClient } from './analyzer.js';
+import {
+  analyzeJobs,
+  analyzePendingJobs,
+  createOpenAIClient,
+} from './analyzer.js';
 import {
   config,
   getSearchParams,
@@ -10,12 +14,18 @@ import {
   SearchParams,
 } from './config.js';
 import {
+  connectDatabase,
+  disconnectDatabase,
+  getDatabaseStats,
+} from './database.js';
+import {
   createEmailTransporter,
   sendErrorNotification,
   sendJobReport,
   sendTestEmail,
+  sendBestJobsEmail,
 } from './emailer.js';
-import { searchJobs } from './scraper.js';
+import { searchJobs, scrapeAndSaveJobs } from './scraper.js';
 import { logger } from './utils/logger.js';
 import type { JobPosting } from './types.js';
 
@@ -47,6 +57,9 @@ const initializeServices = async (): Promise<void> => {
     // Validate configuration
     validateConfig();
 
+    // Connect to database
+    await connectDatabase();
+
     // Initialize services
     appState.openaiClient = createOpenAIClient(config.openaiApiKey);
     appState.transporter = await createEmailTransporter(config.email);
@@ -69,6 +82,113 @@ const sendEmptyReport = async (): Promise<void> => {
   // This would require creating a simple email function for empty reports
   // For now, we'll just log it
 };
+
+/**
+ * Scrape jobs and save to database (weekly)
+ */
+const runJobScraping = async (): Promise<void> => {
+  if (appState.isRunning) {
+    logger.warn('Job process already in progress, skipping...');
+    return;
+  }
+
+  appState.isRunning = true;
+  const startTime = Date.now();
+
+  try {
+    logger.info('Starting job scraping process...');
+
+    const searchParams: SearchParams = getSearchParams();
+    const savedCount = await scrapeAndSaveJobs(searchParams);
+
+    if (savedCount === 0) {
+      logger.warn('No new jobs found or saved');
+    } else {
+      logger.info(`Successfully saved ${savedCount} new jobs to database`);
+    }
+
+    const stats = await getDatabaseStats();
+    logger.info('Database stats:', stats);
+
+    const duration = (Date.now() - startTime) / 1000;
+    logger.info(`Job scraping completed in ${duration}s`);
+  } catch (error) {
+    logger.error('Job scraping failed:', error);
+    throw error;
+  } finally {
+    appState.isRunning = false;
+  }
+};
+
+/**
+ * Analyze pending jobs and send email (daily)
+ */
+const runDailyAnalysis = async (): Promise<void> => {
+  if (appState.isRunning) {
+    logger.warn('Job process already in progress, skipping...');
+    return;
+  }
+
+  appState.isRunning = true;
+  const startTime = Date.now();
+
+  try {
+    logger.info('Starting daily job analysis...');
+
+    if (!appState.openaiClient) {
+      throw new Error('OpenAI client not initialized');
+    }
+
+    // Analyze pending jobs
+    const analyzedCount = await analyzePendingJobs(
+      appState.openaiClient,
+      config.jobCriteria
+    );
+
+    if (analyzedCount > 0) {
+      logger.info(`Analyzed ${analyzedCount} jobs`);
+
+      // Send email with best jobs
+      if (appState.transporter) {
+        await sendBestJobsEmail(
+          appState.transporter,
+          config.user.email,
+          config.email,
+          10
+        );
+      }
+    } else {
+      logger.info('No jobs were analyzed today');
+    }
+
+    const duration = (Date.now() - startTime) / 1000;
+    logger.info(`Daily analysis completed in ${duration}s`);
+  } catch (error) {
+    logger.error('Daily analysis failed:', error);
+
+    // Send error notification
+    try {
+      if (appState.transporter && error instanceof Error) {
+        await sendErrorNotification(
+          appState.transporter,
+          error,
+          config.user.email,
+          config.email
+        );
+      }
+    } catch (emailError) {
+      logger.error('Failed to send error notification:', emailError);
+    }
+
+    throw error;
+  } finally {
+    appState.isRunning = false;
+  }
+};
+
+/**
+ * Send email with best analyzed jobs
+ */
 
 /**
  * Run the complete job hunting process
@@ -240,8 +360,15 @@ const runTest = async (): Promise<void> => {
 /**
  * Handle graceful shutdown
  */
-const handleShutdown = (signal: string): void => {
+const handleShutdown = async (signal: string): Promise<void> => {
   logger.info(`Received ${signal}, shutting down gracefully...`);
+
+  try {
+    await disconnectDatabase();
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+  }
+
   process.exit(0);
 };
 
@@ -259,8 +386,14 @@ const main = async (): Promise<void> => {
       // Run test mode
       await runTest();
     } else if (args.includes('--run-once')) {
-      // Run once mode
+      // Run once mode (legacy)
       await runJobHunt();
+    } else if (args.includes('--scrape')) {
+      // Scrape jobs and save to database
+      await runJobScraping();
+    } else if (args.includes('--analyze')) {
+      // Analyze pending jobs from database
+      await runDailyAnalysis();
     } else {
       // Scheduled mode (default)
       startScheduler();
@@ -284,6 +417,8 @@ const main = async (): Promise<void> => {
 export {
   initializeServices,
   runJobHunt,
+  runJobScraping,
+  runDailyAnalysis,
   startScheduler,
   runTest,
   handleShutdown,

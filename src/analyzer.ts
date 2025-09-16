@@ -1,6 +1,11 @@
 import OpenAI from 'openai';
 import { logger } from './utils/logger.js';
 import { config } from './config.js';
+import {
+  getJobsToAnalyze,
+  updateJobAnalysis,
+  markJobAnalysisFailed,
+} from './database.js';
 import type { JobPosting, UserCriteria } from './types.js';
 
 /**
@@ -145,7 +150,7 @@ export const analyzeJob = async (
         {
           role: 'system',
           content:
-            "You are an expert career advisor and job analyst for developers. Your job is to analyze job postings and score them based on how well they match a candidate's criteria and preferences.",
+            "You are an expert career advisor and job analyst for software developers. Your job is to analyze job postings and score them based on how well they match a candidate's criteria and preferences.",
         },
         {
           role: 'user',
@@ -230,6 +235,64 @@ export const analyzeJobs = async (
   return sortedJobs;
 };
 
+/**
+ * Analyze pending jobs from database (daily limit: 8-9 jobs)
+ */
+export const analyzePendingJobs = async (
+  openaiClient: OpenAI,
+  userCriteria: UserCriteria
+): Promise<number> => {
+  const rateLimiter = new RateLimiter();
+  let analyzedCount = 0;
+
+  try {
+    // Get jobs to analyze (8 jobs to stay well under daily limit)
+    const jobsToAnalyze = await getJobsToAnalyze(8);
+
+    if (jobsToAnalyze.length === 0) {
+      logger.info('No pending jobs to analyze');
+      return 0;
+    }
+
+    logger.info(`Starting daily analysis of ${jobsToAnalyze.length} jobs`);
+
+    // Analyze each job individually
+    for (const job of jobsToAnalyze) {
+      try {
+        await rateLimiter.checkRateLimit();
+
+        const analyzedJob = await analyzeJob(openaiClient, job, userCriteria);
+        const score = analyzedJob.score || 0;
+
+        if (job._id) {
+          await updateJobAnalysis(job._id, score);
+          analyzedCount++;
+          logger.info(
+            `Analyzed: ${job.title} at ${job.company} - Score: ${score}`
+          );
+        }
+
+        // Wait between requests
+        await new Promise((resolve) =>
+          setTimeout(resolve, config.openai.delayBetweenRequests)
+        );
+      } catch (error) {
+        logger.error(`Failed to analyze job: ${job.title}`, error);
+
+        if (job._id) {
+          await markJobAnalysisFailed(job._id);
+        }
+      }
+    }
+
+    logger.info(`Daily analysis complete. Analyzed ${analyzedCount} jobs`);
+    return analyzedCount;
+  } catch (error) {
+    logger.error('Daily analysis failed:', error);
+    throw error;
+  }
+};
+
 export default {
   createOpenAIClient,
   buildAnalysisPrompt,
@@ -237,4 +300,5 @@ export default {
   analyzeJob,
   analyzeJobsBatch,
   analyzeJobs,
+  analyzePendingJobs,
 };

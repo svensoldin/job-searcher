@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import handlebars from 'handlebars';
 import { logger } from './utils/logger.js';
+import { getBestJobs } from './database.js';
 import type { JobPosting, EmailConfig, EmailData } from './types.js';
 
 /**
@@ -205,6 +206,38 @@ export const sendErrorNotification = async (
   }
 };
 
+/**
+ * Send email with best analyzed jobs from database
+ */
+export const sendBestJobsEmail = async (
+  transporter: Transporter,
+  userEmail: string,
+  emailConfig: EmailConfig,
+  maxJobs: number = 10
+): Promise<void> => {
+  try {
+    logger.info('Fetching best jobs from database...');
+
+    const bestJobs = await getBestJobs(maxJobs);
+
+    if (bestJobs.length === 0) {
+      logger.info('No analyzed jobs with good scores found');
+      return;
+    }
+
+    logger.info(`Sending email with ${bestJobs.length} best jobs`);
+
+    const emailData = formatJobsForEmail(bestJobs);
+
+    await sendJobReport(transporter, bestJobs, userEmail, emailConfig);
+
+    logger.info(`Best jobs email sent successfully to ${userEmail}`);
+  } catch (error) {
+    logger.error('Failed to send best jobs email:', error);
+    throw error;
+  }
+};
+
 export default {
   createEmailTransporter,
   loadTemplate,
@@ -213,4 +246,5 @@ export default {
   sendJobReport,
   sendTestEmail,
   sendErrorNotification,
+  sendBestJobsEmail,
 };
