@@ -57,7 +57,8 @@ export interface AppConfig {
   user: UserInfo;
   jobCriteria: UserCriteria;
   schedule: {
-    cronExpression: string;
+    scrapeExpression: string;
+    analyzeExpression: string;
     timezone: string;
   };
   scraping: {

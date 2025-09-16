@@ -277,21 +277,23 @@ const runJobHunt = async (): Promise<void> => {
 };
 
 /**
- * Start the scheduled job hunting
+ * Start the dual scheduled job hunting (scraping + analysis)
  */
 const startScheduler = (): void => {
-  logger.info(
-    `Starting scheduler with cron expression: ${config.schedule.cronExpression}`
-  );
+  logger.info('Starting dual scheduler...');
+  logger.info(`Scraping schedule: ${config.schedule.scrapeExpression}`);
+  logger.info(`Analysis schedule: ${config.schedule.analyzeExpression}`);
+  logger.info(`Timezone: ${config.schedule.timezone}`);
 
+  // Monday: Job Scraping
   cron.schedule(
-    config.schedule.cronExpression,
+    config.schedule.scrapeExpression,
     async () => {
-      logger.info('Scheduled job hunt triggered');
+      logger.info('Scheduled job scraping triggered (Monday)');
       try {
-        await runJobHunt();
+        await runJobScraping();
       } catch (error) {
-        logger.error('Scheduled job hunt failed:', error);
+        logger.error('Scheduled job scraping failed:', error);
       }
     },
     {
@@ -299,7 +301,26 @@ const startScheduler = (): void => {
     }
   );
 
-  logger.info('Scheduler started successfully');
+  // Tuesday-Friday: Job Analysis
+  cron.schedule(
+    config.schedule.analyzeExpression,
+    async () => {
+      logger.info('Scheduled job analysis triggered (Tue-Fri)');
+      try {
+        await runDailyAnalysis();
+      } catch (error) {
+        logger.error('Scheduled job analysis failed:', error);
+      }
+    },
+    {
+      timezone: config.schedule.timezone,
+    }
+  );
+
+  logger.info('Dual scheduler started successfully');
+  logger.info('📅 Schedule:');
+  logger.info('  Monday 9 AM: Scrape jobs from LinkedIn + Indeed');
+  logger.info('  Tue-Fri 9 AM: Analyze 8 pending jobs + send email');
 };
 
 /**

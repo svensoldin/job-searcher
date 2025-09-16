@@ -77,9 +77,10 @@ export const config: AppConfig = {
   user: userInfo,
   jobCriteria,
 
-  // Scheduling configuration
+  // Scheduling configuration (Dual Schedule)
   schedule: {
-    cronExpression: process.env.CRON_SCHEDULE || '0 9 * * 1', // Every Monday at 9 AM
+    scrapeExpression: process.env.CRON_SCHEDULE_SCRAPE || '0 9 * * 1', // Monday scraping
+    analyzeExpression: process.env.CRON_SCHEDULE_ANALYZE || '0 9 * * 2-5', // Tue-Fri analysis
     timezone: process.env.TIMEZONE || 'America/New_York',
   },
 
