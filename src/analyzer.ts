@@ -1,6 +1,56 @@
 import OpenAI from 'openai';
 import { logger } from './utils/logger.js';
-import type { JobPosting, UserCriteria, AnalysisSummary } from './types.js';
+import { config } from './config.js';
+import type { JobPosting, UserCriteria } from './types.js';
+
+/**
+ * Rate limiter to track OpenAI API usage
+ */
+class RateLimiter {
+  private dailyRequests: number = 0;
+  private minuteRequests: number = 0;
+  private lastMinuteReset: number = Date.now();
+  private lastDayReset: number = Date.now();
+
+  async checkRateLimit(): Promise<void> {
+    const now = Date.now();
+
+    // Reset minute counter if a minute has passed
+    if (now - this.lastMinuteReset >= 60000) {
+      this.minuteRequests = 0;
+      this.lastMinuteReset = now;
+    }
+
+    // Reset daily counter if a day has passed
+    if (now - this.lastDayReset >= 24 * 60 * 60 * 1000) {
+      this.dailyRequests = 0;
+      this.lastDayReset = now;
+    }
+
+    // Check if we've exceeded limits
+    if (this.dailyRequests >= config.openai.requestsPerDay) {
+      throw new Error(
+        `Daily OpenAI request limit reached (${config.openai.requestsPerDay})`
+      );
+    }
+
+    if (this.minuteRequests >= config.openai.requestsPerMinute) {
+      logger.info('Minute rate limit reached, waiting...');
+      await new Promise((resolve) => setTimeout(resolve, 60000));
+      this.minuteRequests = 0;
+      this.lastMinuteReset = Date.now();
+    }
+
+    this.minuteRequests++;
+    this.dailyRequests++;
+
+    logger.info(
+      `OpenAI API usage: ${this.minuteRequests}/${config.openai.requestsPerMinute} per minute, ${this.dailyRequests}/${config.openai.requestsPerDay} per day`
+    );
+  }
+}
+
+const rateLimiter = new RateLimiter();
 
 /**
  * Create OpenAI client
@@ -22,9 +72,7 @@ Please analyze this job posting and score it from 0-100 based on how well it mat
 JOB POSTING:
 Title: ${job.title}
 Company: ${job.company}
-Location: ${job.location}
 Description: ${job.description || 'No description available'}
-Source: ${job.source}
 
 CANDIDATE CRITERIA:
 Skills Required: ${userCriteria.requiredSkills?.join(', ') || 'Not specified'}
@@ -32,9 +80,9 @@ Experience Level: ${userCriteria.experienceLevel || 'Not specified'}
 Location Preferences: ${userCriteria.locations?.join(', ') || 'Not specified'}
 Remote Work Preference: ${userCriteria.remotePreference || 'Not specified'}
 
-Please provide your analysis in the following JSON format:
+Please provide only a JSON response with a score:
 {
-  "score": <number 0-100>,
+  "score": <number 0-100>
 }
 
 Consider factors like:
@@ -59,21 +107,19 @@ export const parseAnalysisResponse = (
       return {
         ...job,
         score: analysis.score || 0,
-        analyzedAt: new Date().toISOString(),
       };
     }
   } catch (error) {
     logger.warn('Failed to parse AI response as JSON:', error);
   }
 
-  // Fallback: extract score manually and use raw response
+  // Fallback: extract score manually
   const scoreMatch = response.match(/score[\"']?\s*:\s*(\d+)/i);
   const score = scoreMatch && scoreMatch[1] ? parseInt(scoreMatch[1], 10) : 0;
 
   return {
     ...job,
     score,
-    analyzedAt: new Date().toISOString(),
   };
 };
 
@@ -86,15 +132,20 @@ export const analyzeJob = async (
   userCriteria: UserCriteria
 ): Promise<JobPosting> => {
   try {
+    // Check rate limits before making the request
+    await rateLimiter.checkRateLimit();
+
     const prompt = buildAnalysisPrompt(job, userCriteria);
 
+    logger.info(`Analyzing job: ${job.title} at ${job.company}`);
+
     const completion = await openaiClient.chat.completions.create({
-      model: 'gpt-4',
+      model: config.openai.model,
       messages: [
         {
           role: 'system',
           content:
-            "You are an expert career advisor and job analyst. Your job is to analyze job postings and score them based on how well they match a candidate's criteria and preferences.",
+            "You are an expert career advisor and job analyst for developers. Your job is to analyze job postings and score them based on how well they match a candidate's criteria and preferences.",
         },
         {
           role: 'user',
@@ -102,7 +153,7 @@ export const analyzeJob = async (
         },
       ],
       temperature: 0.3,
-      max_tokens: 1000,
+      max_tokens: config.openai.maxTokens,
     });
 
     const response = completion.choices[0]?.message?.content;
@@ -110,13 +161,19 @@ export const analyzeJob = async (
       throw new Error('No response from OpenAI');
     }
 
-    return parseAnalysisResponse(response, job);
+    const result = parseAnalysisResponse(response, job);
+
+    // Add delay between requests to respect rate limits
+    await new Promise((resolve) =>
+      setTimeout(resolve, config.openai.delayBetweenRequests)
+    );
+
+    return result;
   } catch (error) {
     logger.error(`Error analyzing job ${job.title} at ${job.company}:`, error);
     return {
       ...job,
       score: 0,
-      analyzedAt: new Date().toISOString(),
     };
   }
 };
@@ -128,30 +185,18 @@ export const analyzeJobsBatch = async (
   openaiClient: OpenAI,
   jobs: JobPosting[],
   userCriteria: UserCriteria,
-  batchSize: number = 5
+  batchSize: number = 1
 ): Promise<JobPosting[]> => {
   const analyzedJobs: JobPosting[] = [];
 
-  for (let i = 0; i < jobs.length; i += batchSize) {
-    const batch = jobs.slice(i, i + batchSize);
-
-    const batchPromises = batch.map((job) =>
-      analyzeJob(openaiClient, job, userCriteria)
-    );
-    const batchResults = await Promise.all(batchPromises);
-
-    analyzedJobs.push(...batchResults);
-
-    // Add delay between batches to respect rate limits
-    if (i + batchSize < jobs.length) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+  // Process jobs sequentially to respect rate limits
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i];
+    if (job) {
+      logger.info(`Analyzing job ${i + 1}/${jobs.length}: ${job.title}`);
+      const analyzedJob = await analyzeJob(openaiClient, job, userCriteria);
+      analyzedJobs.push(analyzedJob);
     }
-
-    logger.info(
-      `Analyzed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(
-        jobs.length / batchSize
-      )}`
-    );
   }
 
   return analyzedJobs;
@@ -185,40 +230,6 @@ export const analyzeJobs = async (
   return sortedJobs;
 };
 
-/**
- * Generate a summary of the job analysis results
- */
-export const generateAnalysisSummary = (
-  analyzedJobs: JobPosting[]
-): AnalysisSummary => {
-  const totalJobs = analyzedJobs.length;
-  const averageScore =
-    totalJobs > 0
-      ? analyzedJobs.reduce((sum, job) => sum + (job.score || 0), 0) / totalJobs
-      : 0;
-
-  const scoreDistribution = {
-    excellent: analyzedJobs.filter((job) => (job.score || 0) >= 80).length,
-    good: analyzedJobs.filter(
-      (job) => (job.score || 0) >= 60 && (job.score || 0) < 80
-    ).length,
-    fair: analyzedJobs.filter(
-      (job) => (job.score || 0) >= 40 && (job.score || 0) < 60
-    ).length,
-    poor: analyzedJobs.filter((job) => (job.score || 0) < 40).length,
-  };
-
-  const topJobs = analyzedJobs.slice(0, 10);
-
-  return {
-    totalJobs,
-    averageScore: Math.round(averageScore),
-    scoreDistribution,
-    topJobs,
-    analysisDate: new Date().toISOString(),
-  };
-};
-
 export default {
   createOpenAIClient,
   buildAnalysisPrompt,
@@ -226,5 +237,4 @@ export default {
   analyzeJob,
   analyzeJobsBatch,
   analyzeJobs,
-  generateAnalysisSummary,
 };

@@ -1,6 +1,4 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
-import * as cheerio from 'cheerio';
-import axios from 'axios';
 import { logger } from './utils/logger.js';
 import type { JobPosting, SearchParams } from './types.js';
 
@@ -39,7 +37,7 @@ export const scrapeLinkedIn = async (
   searchParams: SearchParams
 ): Promise<JobPosting[]> => {
   const { keywords, location, experienceLevel } = searchParams;
-  const url = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(
+  const url = `https://www.linkedin.com/jobs/search/?geoId=105015875&keywords=${encodeURIComponent(
     keywords
   )}&location=${encodeURIComponent(location)}`;
 
@@ -71,12 +69,7 @@ export const scrapeLinkedIn = async (
           company: companyElement
             ? companyElement.textContent?.trim() || ''
             : '',
-          location: locationElement
-            ? locationElement.textContent?.trim() || ''
-            : '',
           url: linkElement ? (linkElement as HTMLAnchorElement).href : '',
-          source: 'LinkedIn' as const,
-          dateFound: new Date().toISOString(),
         };
       });
     });
@@ -126,16 +119,11 @@ export const scrapeIndeed = async (
           company: companyElement
             ? companyElement.textContent?.trim() || ''
             : '',
-          location: locationElement
-            ? locationElement.textContent?.trim() || ''
-            : '',
           url: linkElement
             ? `https://www.indeed.com${(
                 linkElement as HTMLAnchorElement
               ).getAttribute('href')}`
             : '',
-          source: 'Indeed' as const,
-          dateFound: new Date().toISOString(),
         };
       });
     });
@@ -152,10 +140,10 @@ export const scrapeIndeed = async (
 /**
  * Get detailed job description from a job URL
  */
+
 export const getJobDescription = async (
   browser: Browser,
-  jobUrl: string,
-  source: string
+  jobUrl: string
 ): Promise<string> => {
   try {
     const page: Page = await browser.newPage();
@@ -163,7 +151,8 @@ export const getJobDescription = async (
 
     let description = '';
 
-    if (source === 'LinkedIn') {
+    // Detect source from URL
+    if (jobUrl.includes('linkedin.com')) {
       await page.waitForSelector('.show-more-less-html__markup', {
         timeout: 5000,
       });
@@ -171,7 +160,7 @@ export const getJobDescription = async (
         '.show-more-less-html__markup',
         (el) => el.textContent?.trim() || ''
       );
-    } else if (source === 'Indeed') {
+    } else if (jobUrl.includes('indeed.com')) {
       await page.waitForSelector('#jobDescriptionText', { timeout: 5000 });
       description = await page.$eval(
         '#jobDescriptionText',
@@ -218,7 +207,7 @@ export const enrichJobsWithDescriptions = async (
   for (let i = 0; i < jobsToEnrich.length; i++) {
     const job = jobsToEnrich[i];
     if (job && job.url) {
-      job.description = await getJobDescription(browser, job.url, job.source);
+      job.description = await getJobDescription(browser, job.url);
       // Add delay to be respectful to the servers
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }

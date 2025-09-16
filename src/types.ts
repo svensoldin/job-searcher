@@ -5,13 +5,9 @@
 export interface JobPosting {
   title: string;
   company: string;
-  location: string;
   url: string;
-  source: 'LinkedIn' | 'Indeed' | string;
-  dateFound: string;
   description?: string;
   score?: number;
-  analyzedAt?: string;
 }
 
 export interface SearchParams {
@@ -34,17 +30,10 @@ export interface UserInfo {
   name: string;
 }
 
-export interface AnalysisSummary {
+export interface EmailData {
+  jobs: JobPosting[];
   totalJobs: number;
-  averageScore: number;
-  scoreDistribution: {
-    excellent: number;
-    good: number;
-    fair: number;
-    poor: number;
-  };
-  topJobs: JobPosting[];
-  analysisDate: string;
+  date: string;
 }
 
 export interface EmailConfig {
@@ -75,31 +64,17 @@ export interface AppConfig {
     batchSize: number;
     scoreThreshold: number;
   };
+  openai: {
+    model: string;
+    maxTokens: number;
+    requestsPerMinute: number;
+    requestsPerDay: number;
+    delayBetweenRequests: number;
+  };
   logging: {
     level: string;
     file: string;
   };
-}
-
-export interface EmailData {
-  summary: {
-    totalJobs: number;
-    averageScore: number;
-    excellent: number;
-    good: number;
-    fair: number;
-    poor: number;
-    date: string;
-  };
-  topJobs: Array<{
-    title: string;
-    company: string;
-    location: string;
-    source: string;
-    url: string;
-    score: number;
-  }>;
-  hasJobs: boolean;
 }
 
 export interface AppState {
@@ -110,5 +85,3 @@ export interface AppState {
 
 // Utility types
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
-export type JobScore = 'excellent' | 'good' | 'fair' | 'poor';
-export type CommandLineArgs = '--test' | '--run-once';

@@ -2,11 +2,7 @@ import cron from 'node-cron';
 import { Transporter } from 'nodemailer';
 import OpenAI from 'openai';
 
-import {
-  analyzeJobs,
-  createOpenAIClient,
-  generateAnalysisSummary,
-} from './analyzer.js';
+import { analyzeJobs, createOpenAIClient } from './analyzer.js';
 import {
   config,
   getSearchParams,
@@ -21,7 +17,7 @@ import {
 } from './emailer.js';
 import { searchJobs } from './scraper.js';
 import { logger } from './utils/logger.js';
-import type { JobPosting, AnalysisSummary } from './types.js';
+import type { JobPosting } from './types.js';
 
 /**
  * Application state interface
@@ -75,17 +71,6 @@ const sendEmptyReport = async (): Promise<void> => {
 };
 
 /**
- * Job hunt statistics interface
- */
-interface JobHuntStats {
-  totalJobs: number;
-  analyzedJobs: number;
-  averageScore: number;
-  topScore: number;
-  excellentMatches: number;
-}
-
-/**
  * Run the complete job hunting process
  */
 const runJobHunt = async (): Promise<void> => {
@@ -126,12 +111,8 @@ const runJobHunt = async (): Promise<void> => {
       config.analysis.maxJobsToAnalyze
     );
 
-    // Step 3: Generate summary
-    logger.info('Step 3: Generating analysis summary...');
-    const summary: AnalysisSummary = generateAnalysisSummary(analyzedJobs);
-
-    // Step 4: Send email report
-    logger.info('Step 4: Sending email report...');
+    // Step 3: Send email report
+    logger.info('Step 3: Sending email report...');
     if (!appState.transporter) {
       throw new Error('Email transporter not initialized');
     }
@@ -139,7 +120,6 @@ const runJobHunt = async (): Promise<void> => {
     await sendJobReport(
       appState.transporter,
       analyzedJobs,
-      summary,
       config.user.email,
       config.email
     );
@@ -148,15 +128,11 @@ const runJobHunt = async (): Promise<void> => {
     logger.info(`Job hunt completed successfully in ${duration}s`);
 
     // Log summary statistics
-    const stats: JobHuntStats = {
+    logger.info('Job hunt summary:', {
       totalJobs: jobs.length,
       analyzedJobs: analyzedJobs.length,
-      averageScore: summary.averageScore,
       topScore: analyzedJobs[0]?.score || 0,
-      excellentMatches: summary.scoreDistribution.excellent,
-    };
-
-    logger.info('Job hunt summary:', stats);
+    });
   } catch (error) {
     logger.error('Job hunt failed:', error);
 

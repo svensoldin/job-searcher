@@ -3,12 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import handlebars from 'handlebars';
 import { logger } from './utils/logger.js';
-import type {
-  JobPosting,
-  AnalysisSummary,
-  EmailConfig,
-  EmailData,
-} from './types.js';
+import type { JobPosting, EmailConfig, EmailData } from './types.js';
 
 /**
  * Create and initialize email transporter
@@ -60,22 +55,11 @@ export const loadTemplate = async (
 /**
  * Format job data for email template
  */
-export const formatJobsForEmail = (
-  analyzedJobs: JobPosting[],
-  summary: AnalysisSummary
-): EmailData => {
-  const topJobs = analyzedJobs.slice(0, 10).map((job) => ({
-    title: job.title,
-    company: job.company,
-    location: job.location,
-    source: job.source,
-    url: job.url,
-    score: job.score || 0,
-  }));
-
+export const formatJobsForEmail = (jobs: JobPosting[]): EmailData => {
   return {
-    topJobs,
-    hasJobs: topJobs.length > 0,
+    jobs: jobs.slice(0, 10), // Get top 10 jobs
+    totalJobs: jobs.length,
+    date: new Date().toLocaleDateString(),
   };
 };
 
@@ -85,29 +69,22 @@ export const formatJobsForEmail = (
 export const generateTextVersion = (emailData: EmailData): string => {
   let text = `AI Job Hunter - Weekly Report\n`;
   text += `=====================================\n\n`;
-  text += `Search Summary:\n`;
-  text += `- Total jobs found: ${emailData.summary.totalJobs}\n`;
-  text += `- Average score: ${emailData.summary.averageScore}\n`;
-  text += `- Excellent matches (80+): ${emailData.summary.excellent}\n`;
-  text += `- Good matches (60-79): ${emailData.summary.good}\n`;
-  text += `- Fair matches (40-59): ${emailData.summary.fair}\n`;
-  text += `- Poor matches (<40): ${emailData.summary.poor}\n\n`;
+  text += `Total jobs found: ${emailData.totalJobs}\n`;
+  text += `Report date: ${emailData.date}\n\n`;
 
-  if (emailData.hasJobs) {
-    text += `Top Job Matches:\n`;
-    text += `================\n\n`;
+  if (emailData.jobs.length > 0) {
+    text += `Job Matches:\n`;
+    text += `============\n\n`;
 
-    emailData.topJobs.forEach((job, index) => {
+    emailData.jobs.forEach((job, index) => {
       text += `${index + 1}. ${job.title} at ${job.company}\n`;
-      text += `   Score: ${job.score}/100\n`;
-      text += `   Location: ${job.location}\n`;
-      text += `   Source: ${job.source}\n`;
-      text += `   URL: ${job.url}\n`;
-      if (job.highlights.length > 0) {
-        text += `   Highlights: ${job.highlights.join(', ')}\n`;
+      if (job.score) {
+        text += `   Score: ${job.score}/100\n`;
       }
-      if (job.concerns.length > 0) {
-        text += `   Concerns: ${job.concerns.join(', ')}\n`;
+      text += `   URL: ${job.url}\n`;
+      if (job.description) {
+        const shortDesc = job.description.substring(0, 200) + '...';
+        text += `   Description: ${shortDesc}\n`;
       }
       text += `\n`;
     });
@@ -116,7 +93,7 @@ export const generateTextVersion = (emailData: EmailData): string => {
     text += `Consider adjusting your search parameters.\n`;
   }
 
-  text += `\nReport generated on ${emailData.summary.date}\n`;
+  text += `\nReport generated on ${emailData.date}\n`;
   text += `Happy job hunting!\n`;
 
   return text;
@@ -127,14 +104,13 @@ export const generateTextVersion = (emailData: EmailData): string => {
  */
 export const sendJobReport = async (
   transporter: Transporter,
-  analyzedJobs: JobPosting[],
-  summary: AnalysisSummary,
+  jobs: JobPosting[],
   userEmail: string,
   emailConfig: EmailConfig
 ): Promise<any> => {
   try {
-    const template = await loadTemplate('job-report');
-    const emailData = formatJobsForEmail(analyzedJobs, summary);
+    const template = await loadTemplate('job-report-simple');
+    const emailData = formatJobsForEmail(jobs);
 
     const htmlContent = template(emailData);
 
@@ -144,7 +120,7 @@ export const sendJobReport = async (
         address: emailConfig.from,
       },
       to: userEmail,
-      subject: `Weekly Job Report - ${emailData.summary.totalJobs} Jobs Found`,
+      subject: `Weekly Job Report - ${emailData.totalJobs} Jobs Found`,
       html: htmlContent,
       text: generateTextVersion(emailData),
     };

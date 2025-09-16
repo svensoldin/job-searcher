@@ -54,7 +54,7 @@ An intelligent job hunting agent that automatically searches for job postings, a
    # Job Search Criteria
    JOB_KEYWORDS=software engineer,developer,programmer
    JOB_LOCATIONS=Remote,New York,San Francisco
-   REQUIRED_SKILLS=JavaScript,Python,React
+   CORE_SKILLS=JavaScript,Python,React
    ```
 
 4. **Test the setup**
@@ -102,7 +102,7 @@ JOB_LOCATIONS=Remote,San Francisco,New York,Austin
 EXPERIENCE_LEVEL=Mid-level
 
 # Must-have skills
-REQUIRED_SKILLS=JavaScript,React,Node.js
+CORE_SKILLS=JavaScript,React,Node.js
 
 # Nice-to-have skills
 PREFERRED_SKILLS=TypeScript,AWS,Docker

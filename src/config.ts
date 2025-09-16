@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import path from 'path';
 import type {
   AppConfig,
   UserCriteria,
@@ -60,7 +59,7 @@ export const jobCriteria: UserCriteria = {
       ? parseArray(process.env.JOB_LOCATIONS)
       : ['Remote'],
   experienceLevel: process.env.EXPERIENCE_LEVEL || 'Mid-level',
-  requiredSkills: parseArray(process.env.REQUIRED_SKILLS),
+  requiredSkills: parseArray(process.env.CORE_SKILLS),
   remotePreference: process.env.REMOTE_PREFERENCE || 'Remote preferred',
 };
 
@@ -93,9 +92,21 @@ export const config: AppConfig = {
 
   // Analysis configuration
   analysis: {
-    maxJobsToAnalyze: parseInteger(process.env.MAX_ANALYZE, 50),
-    batchSize: parseInteger(process.env.ANALYSIS_BATCH_SIZE, 5),
+    maxJobsToAnalyze: parseInteger(process.env.MAX_ANALYZE, 3),
+    batchSize: parseInteger(process.env.ANALYSIS_BATCH_SIZE, 1),
     scoreThreshold: parseInteger(process.env.SCORE_THRESHOLD, 60),
+  },
+
+  // OpenAI configuration for rate limiting
+  openai: {
+    model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+    maxTokens: parseInteger(process.env.OPENAI_MAX_TOKENS, 500),
+    requestsPerMinute: parseInteger(process.env.OPENAI_REQUESTS_PER_MINUTE, 3),
+    requestsPerDay: parseInteger(process.env.OPENAI_REQUESTS_PER_DAY, 200),
+    delayBetweenRequests: parseInteger(
+      process.env.OPENAI_DELAY_BETWEEN_REQUESTS,
+      20000
+    ),
   },
 
   // Logging configuration

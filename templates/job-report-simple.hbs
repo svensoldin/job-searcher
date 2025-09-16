@@ -50,11 +50,7 @@
         }
         .stat {
             text-align: center;
-            padding: 15px;
-            background-color: white;
-            border-radius: 6px;
-            border: 1px solid #dee2e6;
-            min-width: 120px;
+            min-width: 100px;
         }
         .stat-number {
             font-size: 24px;
@@ -65,7 +61,10 @@
             font-size: 12px;
             color: #6c757d;
             text-transform: uppercase;
-            margin-top: 5px;
+            letter-spacing: 0.5px;
+        }
+        .jobs-section {
+            margin-top: 30px;
         }
         .jobs-section h2 {
             color: #495057;
@@ -77,81 +76,92 @@
             border-radius: 6px;
             padding: 20px;
             margin-bottom: 20px;
-            background-color: #fff;
+            transition: box-shadow 0.3s ease;
+        }
+        .job-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         .job-header {
             display: flex;
-            justify-content: between;
-            align-items: flex-start;
+            justify-content: space-between;
+            align-items: start;
             margin-bottom: 15px;
-            flex-wrap: wrap;
         }
         .job-title {
-            font-size: 18px;
-            font-weight: bold;
-            color: #007acc;
             margin: 0;
-            flex-grow: 1;
+            color: #007acc;
+            font-size: 18px;
+            flex: 1;
         }
         .job-score {
-            background-color: #28a745;
+            background-color: #6c757d;
             color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
             font-weight: bold;
-            font-size: 14px;
             margin-left: 15px;
         }
-        .job-score.good { background-color: #17a2b8; }
-        .job-score.fair { background-color: #ffc107; color: #333; }
-        .job-score.poor { background-color: #dc3545; }
+        .job-score.excellent {
+            background-color: #28a745;
+        }
+        .job-score.good {
+            background-color: #007acc;
+        }
+        .job-score.fair {
+            background-color: #ffc107;
+            color: #333;
+        }
         .job-meta {
-            color: #6c757d;
-            font-size: 14px;
             margin-bottom: 15px;
         }
         .job-meta span {
-            margin-right: 15px;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
         }
-        .highlights, .concerns {
-            margin: 10px 0;
+        .description {
+            margin-bottom: 15px;
         }
-        .highlights ul, .concerns ul {
-            margin: 5px 0;
-            padding-left: 20px;
+        .description h4 {
+            margin: 0 0 10px 0;
+            color: #495057;
+            font-size: 14px;
         }
-        .highlights li { color: #28a745; }
-        .concerns li { color: #dc3545; }
-        .highlights h4 { color: #28a745; margin: 0; }
-        .concerns h4 { color: #dc3545; margin: 0; }
+        .description p {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
         .apply-button {
             display: inline-block;
             background-color: #007acc;
             color: white;
             padding: 10px 20px;
             text-decoration: none;
-            border-radius: 5px;
+            border-radius: 4px;
             font-weight: bold;
-            margin-top: 10px;
+            transition: background-color 0.3s ease;
         }
         .apply-button:hover {
             background-color: #0056b3;
         }
+        .no-jobs {
+            text-align: center;
+            padding: 40px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+        }
         .footer {
             text-align: center;
-            margin-top: 30px;
+            margin-top: 40px;
             padding-top: 20px;
             border-top: 1px solid #dee2e6;
             color: #6c757d;
             font-size: 14px;
-        }
-        .no-jobs {
-            text-align: center;
-            padding: 40px;
-            color: #6c757d;
-        }
-        .no-jobs h3 {
-            color: #495057;
         }
     </style>
 </head>
@@ -159,77 +169,46 @@
     <div class="container">
         <div class="header">
             <h1>🤖 AI Job Hunter</h1>
-            <p>Weekly Job Report - {{summary.date}}</p>
+            <p>Weekly Job Report - {{date}}</p>
         </div>
 
         <div class="summary">
             <h2>📊 Search Summary</h2>
             <div class="stats">
                 <div class="stat">
-                    <div class="stat-number">{{summary.totalJobs}}</div>
-                    <div class="stat-label">Total Jobs</div>
+                    <div class="stat-number">{{totalJobs}}</div>
+                    <div class="stat-label">Total Jobs Found</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-number">{{summary.averageScore}}</div>
-                    <div class="stat-label">Avg Score</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">{{summary.excellent}}</div>
-                    <div class="stat-label">Excellent (80+)</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">{{summary.good}}</div>
-                    <div class="stat-label">Good (60-79)</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">{{summary.fair}}</div>
-                    <div class="stat-label">Fair (40-59)</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">{{summary.poor}}</div>
-                    <div class="stat-label">Poor (<40)</div>
+                    <div class="stat-number">{{date}}</div>
+                    <div class="stat-label">Report Date</div>
                 </div>
             </div>
         </div>
 
-        {{#if hasJobs}}
+        {{#if jobs.length}}
         <div class="jobs-section">
-            <h2>🎯 Top Job Matches</h2>
+            <h2>🎯 Job Matches</h2>
             
-            {{#each topJobs}}
+            {{#each jobs}}
             <div class="job-card">
                 <div class="job-header">
                     <h3 class="job-title">{{title}}</h3>
-                    <span class="job-score {{#if (gte score 80)}}excellent{{else}}{{#if (gte score 60)}}good{{else}}{{#if (gte score 40)}}fair{{else}}poor{{/if}}{{/if}}{{/if}}">
+                    {{#if score}}
+                    <span class="job-score {{#if (gte score 80)}}excellent{{else}}{{#if (gte score 60)}}good{{else}}fair{{/if}}{{/if}}">
                         {{score}}/100
                     </span>
+                    {{/if}}
                 </div>
                 
                 <div class="job-meta">
                     <span><strong>🏢 Company:</strong> {{company}}</span>
-                    <span><strong>📍 Location:</strong> {{location}}</span>
-                    <span><strong>🔗 Source:</strong> {{source}}</span>
                 </div>
 
-                {{#if highlights.length}}
-                <div class="highlights">
-                    <h4>✅ Highlights:</h4>
-                    <ul>
-                        {{#each highlights}}
-                        <li>{{this}}</li>
-                        {{/each}}
-                    </ul>
-                </div>
-                {{/if}}
-
-                {{#if concerns.length}}
-                <div class="concerns">
-                    <h4>⚠️ Concerns:</h4>
-                    <ul>
-                        {{#each concerns}}
-                        <li>{{this}}</li>
-                        {{/each}}
-                    </ul>
+                {{#if description}}
+                <div class="description">
+                    <h4>📄 Description:</h4>
+                    <p>{{description}}</p>
                 </div>
                 {{/if}}
 
@@ -248,14 +227,13 @@
                 <li>Adjusting your search keywords</li>
                 <li>Expanding your location preferences</li>
                 <li>Reviewing your required skills</li>
-                <li>Broadening your industry preferences</li>
             </ul>
         </div>
         {{/if}}
 
         <div class="footer">
-            <p>🚀 Keep pushing forward! Your next great opportunity is out there.</p>
-            <p><em>This report was generated automatically by AI Job Hunter</em></p>
+            <p>Happy job hunting! 🚀</p>
+            <p>Generated by AI Job Hunter on {{date}}</p>
         </div>
     </div>
 </body>
