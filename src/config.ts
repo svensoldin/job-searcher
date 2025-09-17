@@ -67,8 +67,9 @@ export const jobCriteria: UserCriteria = {
  * Application configuration
  */
 export const config: AppConfig = {
-  // OpenAI API configuration
-  openaiApiKey: process.env.OPENAI_API_KEY || '',
+  // AI API configuration
+  openaiApiKey: process.env.OPENAI_API_KEY || '', // Keep for legacy compatibility
+  huggingFaceApiKey: process.env.HUGGING_FACE_API_KEY || '',
 
   // Email configuration
   email: emailConfig,
@@ -98,18 +99,6 @@ export const config: AppConfig = {
     scoreThreshold: parseInteger(process.env.SCORE_THRESHOLD, 60),
   },
 
-  // OpenAI configuration for rate limiting
-  openai: {
-    model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
-    maxTokens: parseInteger(process.env.OPENAI_MAX_TOKENS, 500),
-    requestsPerMinute: parseInteger(process.env.OPENAI_REQUESTS_PER_MINUTE, 3),
-    requestsPerDay: parseInteger(process.env.OPENAI_REQUESTS_PER_DAY, 200),
-    delayBetweenRequests: parseInteger(
-      process.env.OPENAI_DELAY_BETWEEN_REQUESTS,
-      20000
-    ),
-  },
-
   // Logging configuration
   logging: {
     level: process.env.LOG_LEVEL || 'info',
@@ -120,12 +109,7 @@ export const config: AppConfig = {
 /**
  * Required configuration fields
  */
-const REQUIRED_FIELDS = [
-  'openaiApiKey',
-  'email.user',
-  'email.password',
-  'user.email',
-] as const;
+const REQUIRED_FIELDS = ['huggingFaceApiKey'] as const;
 
 /**
  * Validate required configuration

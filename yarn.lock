@@ -925,6 +925,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@huggingface/inference@npm:^4.8.0":
+  version: 4.8.0
+  resolution: "@huggingface/inference@npm:4.8.0"
+  dependencies:
+    "@huggingface/jinja": "npm:^0.5.1"
+    "@huggingface/tasks": "npm:^0.19.45"
+  checksum: 93888df121c210ad2d7ecf4c9070e6c7e45a214a2ca4284115a6b977ead68ce7467235ae88bc25f62209fd74cedef6dc403463069edd33c28b44ae38aaaed1c8
+  languageName: node
+  linkType: hard
+
+"@huggingface/jinja@npm:^0.5.1":
+  version: 0.5.1
+  resolution: "@huggingface/jinja@npm:0.5.1"
+  checksum: 3e439151492310449c0110074583eabd545046a7ac926c294296c9d50f63b82045570c3116d5f5e871830a6008ec45c6637a16550f78a80963ca577fa90ad3ee
+  languageName: node
+  linkType: hard
+
+"@huggingface/tasks@npm:^0.19.45":
+  version: 0.19.46
+  resolution: "@huggingface/tasks@npm:0.19.46"
+  checksum: db4ae81aee780dcec149070ca3612fc40c39d3c7f31208ceafbbf6d01d873bb6a12d35163697620e055d4af4b170ce065ffdc0c39b3eddf3b2dd594501936e42
+  languageName: node
+  linkType: hard
+
 "@humanwhocodes/config-array@npm:^0.13.0":
   version: 0.13.0
   resolution: "@humanwhocodes/config-array@npm:0.13.0"
@@ -2317,6 +2341,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "ai-job-hunter@workspace:."
   dependencies:
+    "@huggingface/inference": "npm:^4.8.0"
     "@types/cheerio": "npm:^1.0.0"
     "@types/handlebars": "npm:^4.1.0"
     "@types/jest": "npm:^29.5.8"

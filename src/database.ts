@@ -67,38 +67,112 @@ export const createJobHash = (job: JobPosting): string => {
 };
 
 /**
- * Save jobs to database (skip duplicates)
+ * Weekly refresh: Save jobs with URL-based persistence
+ * - Drop records older than 1 week
+ * - Preserve jobs with URLs that exist in new batch
+ * - Add new jobs with scores
  */
-export const saveJobs = async (jobs: JobPosting[]): Promise<number> => {
-  let savedCount = 0;
+export const weeklyRefreshJobs = async (
+  jobs: JobPosting[]
+): Promise<number> => {
+  try {
+    logger.info('Starting weekly job refresh...');
 
-  for (const job of jobs) {
-    try {
-      const hash = createJobHash(job);
+    // Get all existing URLs to preserve job history
+    const existingUrls = new Set(await Job.distinct('url'));
+    logger.info(`Found ${existingUrls.size} existing job URLs in database`);
 
-      // Check if job already exists
-      const existingJob = await Job.findOne({ hash });
-      if (existingJob) {
-        logger.debug(`Job already exists: ${job.title} at ${job.company}`);
-        continue;
-      }
+    // Filter jobs: only keep new URLs
+    const newJobs = jobs.filter((job) => !existingUrls.has(job.url));
+    const preservedCount = jobs.length - newJobs.length;
 
-      // Save new job
-      await Job.create({
+    logger.info(
+      `Jobs analysis: ${newJobs.length} new, ${preservedCount} already exist (preserved)`
+    );
+
+    // Drop old records (older than 1 week)
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const deleteResult = await Job.deleteMany({
+      scraped_at: { $lt: oneWeekAgo },
+      url: { $nin: jobs.map((j) => j.url) }, // Don't delete if URL is in new batch
+    });
+
+    logger.info(`Dropped ${deleteResult.deletedCount} old job records`);
+
+    // Add new jobs if any
+    if (newJobs.length > 0) {
+      const jobsToInsert = newJobs.map((job) => ({
         ...job,
-        hash,
-        analysis_status: 'pending',
-      });
+        hash: createJobHash(job),
+        analysis_status: 'analyzed', // Jobs come pre-analyzed
+        scraped_at: new Date(),
+      }));
 
-      savedCount++;
-      logger.debug(`Saved job: ${job.title} at ${job.company}`);
-    } catch (error) {
-      logger.error(`Failed to save job: ${job.title}`, error);
+      await Job.insertMany(jobsToInsert);
+      logger.info(`Inserted ${newJobs.length} new jobs`);
     }
-  }
 
-  logger.info(`Saved ${savedCount} new jobs to database`);
-  return savedCount;
+    // Final stats
+    const finalStats = await getDatabaseStats();
+    logger.info('Weekly refresh complete:', finalStats);
+
+    return newJobs.length;
+  } catch (error) {
+    logger.error('Weekly refresh failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Remove duplicate jobs from database (cleanup function)
+ */
+export const removeDuplicateJobs = async (): Promise<number> => {
+  try {
+    logger.info('Starting duplicate job cleanup...');
+
+    // Find all duplicate hashes
+    const duplicates = await Job.aggregate([
+      {
+        $group: {
+          _id: '$hash',
+          count: { $sum: 1 },
+          docs: { $push: { id: '$_id', scraped_at: '$scraped_at' } },
+        },
+      },
+      {
+        $match: { count: { $gt: 1 } },
+      },
+    ]);
+
+    if (duplicates.length === 0) {
+      logger.info('No duplicate jobs found');
+      return 0;
+    }
+
+    let removedCount = 0;
+
+    // For each group of duplicates, keep the oldest one and remove the rest
+    for (const duplicate of duplicates) {
+      const docs = duplicate.docs.sort(
+        (a: any, b: any) =>
+          new Date(a.scraped_at).getTime() - new Date(b.scraped_at).getTime()
+      );
+
+      // Remove all but the first (oldest) document
+      const toRemove = docs.slice(1).map((doc: any) => doc.id);
+
+      if (toRemove.length > 0) {
+        await Job.deleteMany({ _id: { $in: toRemove } });
+        removedCount += toRemove.length;
+      }
+    }
+
+    logger.info(`Removed ${removedCount} duplicate jobs from database`);
+    return removedCount;
+  } catch (error) {
+    logger.error('Failed to remove duplicate jobs:', error);
+    return 0;
+  }
 };
 
 /**
@@ -159,27 +233,28 @@ export const markJobAnalysisFailed = async (jobId: string): Promise<void> => {
 };
 
 /**
- * Get best analyzed jobs for email
+ * Get jobs by score for viewing/analysis
  */
-export const getBestJobs = async (
-  limit: number = 10
+export const getJobsByScore = async (
+  minScore: number = 60,
+  limit: number = 50
 ): Promise<JobPosting[]> => {
   try {
     const jobs = await Job.find({
       analysis_status: 'analyzed',
-      score: { $gte: 60 }, // Only jobs with good scores
+      score: { $gte: minScore },
     })
-      .sort({ score: -1, scraped_at: -1 }) // Best score first, then newest
+      .sort({ score: -1, scraped_at: -1 })
       .limit(limit)
       .lean();
 
-    logger.info(`Found ${jobs.length} best jobs for email`);
+    logger.info(`Found ${jobs.length} jobs with score >= ${minScore}`);
     return jobs.map((job) => ({
       ...job,
       _id: job._id.toString(),
     }));
   } catch (error) {
-    logger.error('Failed to get best jobs:', error);
+    logger.error('Failed to get jobs by score:', error);
     return [];
   }
 };
@@ -213,10 +288,8 @@ export default {
   connectDatabase,
   disconnectDatabase,
   createJobHash,
-  saveJobs,
-  getJobsToAnalyze,
-  updateJobAnalysis,
-  markJobAnalysisFailed,
-  getBestJobs,
+  weeklyRefreshJobs,
+  removeDuplicateJobs,
+  getJobsByScore,
   getDatabaseStats,
 };

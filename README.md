@@ -1,23 +1,38 @@
 # 🤖 AI Job Hunter
 
-An intelligent job hunting agent that automatically searches for job postings, analyzes them using AI, and sends you curated weekly reports with the best matches based on your criteria.
+An intelligent job hunting agent that automatically searches for job postings, analyzes them using AI, and stores them in MongoDB with weekly refresh cycles.
 
 ## ✨ Features
 
-- **Automated Job Scraping**: Searches multiple job boards (LinkedIn, Indeed) weekly
-- **AI-Powered Analysis**: Uses OpenAI GPT-4 to score jobs based on your specific criteria
-- **Smart Filtering**: Ranks jobs by compatibility and highlights strengths/concerns
-- **Beautiful Email Reports**: Sends HTML email reports with top job matches
-- **Configurable Scheduling**: Customizable search frequency and criteria
-- **Modern Architecture**: Built with functional JavaScript and modular design
+- **Automated Job Scraping**: Searches multiple job boards (LinkedIn, Google Jobs) weekly
+- **FREE AI Analysis**: Uses Hugging Face (FREE) for intelligent job scoring
+- **MongoDB Integration**: Efficient database storage with weekly refresh pattern
+- **Smart Filtering**: Ranks jobs by compatibility with your criteria
+- **Heroku Ready**: Perfect for cloud deployment
+- **Modern Architecture**: TypeScript, MongoDB, simplified workflow
+
+## 🆓 AI Options
+
+### Hugging Face (Recommended - FREE)
+
+- ✅ **Completely FREE** - 1000 requests/month
+- ✅ **No billing required**
+- ✅ **Perfect for Heroku**
+- ✅ **Good quality analysis**
+
+### OpenAI (Legacy - Paid)
+
+- ❌ Requires paid account
+- ❌ Costs money per request
+- ✅ Slightly better quality
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Node.js 18+
-- OpenAI API key
-- Email account with app password (Gmail recommended)
+- FREE Hugging Face account ([setup guide](./HUGGING_FACE_SETUP.md))
+- MongoDB database
 
 ### Installation
 

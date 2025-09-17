@@ -1,6 +1,8 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { logger } from './utils/logger.js';
-import { saveJobs } from './database.js';
+import { weeklyRefreshJobs } from './database.js';
+import { analyzeJobs, createHuggingFaceClient } from './analyzer.js';
+import { config } from './config.js';
 import type { JobPosting, SearchParams } from './types.js';
 
 /**
@@ -86,16 +88,16 @@ export const scrapeLinkedIn = async (
 };
 
 /**
- * Search for jobs on Indeed
+ * Search for jobs on Google Jobs
  */
-export const scrapeIndeed = async (
+export const scrapeGoogleJobs = async (
   browser: Browser,
   searchParams: SearchParams
 ): Promise<JobPosting[]> => {
   const { keywords, location } = searchParams;
-  const url = `https://www.indeed.com/jobs?q=${encodeURIComponent(
-    keywords
-  )}&l=${encodeURIComponent(location)}`;
+  const url = `https://www.google.com/search?q=${encodeURIComponent(
+    keywords + ' jobs'
+  )}+${encodeURIComponent(location)}&ibp=htl;jobs`;
 
   try {
     const page: Page = await browser.newPage();
@@ -104,7 +106,7 @@ export const scrapeIndeed = async (
     // Wait for job listings to load with multiple selectors as fallbacks
     try {
       await page.waitForSelector(
-        '[data-jk], .job_seen_beacon, .jobsearch-SerpJobCard, .slider_container .slider_item',
+        '[data-ved][jsname] h3, .PwjeAc, [role="listitem"], .BjJfJf',
         { timeout: 10000 }
       );
     } catch (selectorError) {
@@ -113,26 +115,26 @@ export const scrapeIndeed = async (
     }
 
     const jobs: JobPosting[] = await page.evaluate(() => {
-      // Try multiple selector strategies for Indeed's changing layout
+      // Try multiple selector strategies for Google Jobs
       let jobElements: NodeListOf<Element> | null = null;
 
-      // Strategy 1: data-jk attribute (older layout)
-      jobElements = document.querySelectorAll('[data-jk]');
+      // Strategy 1: Look for job listing items
+      jobElements = document.querySelectorAll('[role="listitem"]');
 
-      // Strategy 2: job_seen_beacon class (common layout)
+      // Strategy 2: Look for job cards with specific patterns
       if (jobElements.length === 0) {
-        jobElements = document.querySelectorAll('.job_seen_beacon');
+        jobElements = document.querySelectorAll('.PwjeAc');
       }
 
-      // Strategy 3: jobsearch-SerpJobCard (another layout)
+      // Strategy 3: Look for elements with job-specific attributes
       if (jobElements.length === 0) {
-        jobElements = document.querySelectorAll('.jobsearch-SerpJobCard');
+        jobElements = document.querySelectorAll('[data-ved][jsname]');
       }
 
-      // Strategy 4: slider items (newer layout)
+      // Strategy 4: Look for job title containers
       if (jobElements.length === 0) {
         jobElements = document.querySelectorAll(
-          '.slider_container .slider_item'
+          'div:has(.BjJfJf), div:has(h3)'
         );
       }
 
@@ -140,24 +142,25 @@ export const scrapeIndeed = async (
         .map((element) => {
           // Try multiple selector patterns for job title
           let titleElement =
-            element.querySelector('[data-testid="job-title"]') ||
-            element.querySelector('.jobTitle a span') ||
-            element.querySelector('h2 a span') ||
-            element.querySelector('.jobTitle span') ||
-            element.querySelector('h2.jobTitle a');
+            element.querySelector('h3') ||
+            element.querySelector('[role="heading"]') ||
+            element.querySelector('.BjJfJf') ||
+            element.querySelector('div[style*="font-weight"]') ||
+            element.querySelector('[data-test-id="job-title"]');
 
           // Try multiple selector patterns for company name
           let companyElement =
-            element.querySelector('[data-testid="company-name"]') ||
-            element.querySelector('.companyName') ||
-            element.querySelector('[data-testid="company-name"] a') ||
-            element.querySelector('span.companyName a');
+            element.querySelector('.vNEEBe') ||
+            element.querySelector('.nJlQNd') ||
+            element.querySelector('[data-test-id="employer-name"]') ||
+            element.querySelector('span[style*="color"]') ||
+            element.querySelector('.BjJfJf + div');
 
-          // Try multiple selector patterns for job link
+          // Try to find clickable elements for job links
           let linkElement =
-            element.querySelector('h2 a') ||
-            element.querySelector('.jobTitle a') ||
-            element.querySelector('[data-jk] h2 a');
+            element.querySelector('a[href*="jobs"]') ||
+            element.querySelector('a[data-ved]') ||
+            element.querySelector('a');
 
           return {
             title: titleElement ? titleElement.textContent?.trim() || '' : '',
@@ -165,21 +168,19 @@ export const scrapeIndeed = async (
               ? companyElement.textContent?.trim() || ''
               : '',
             url: linkElement
-              ? `https://www.indeed.com${
-                  (linkElement as HTMLAnchorElement).getAttribute('href') || ''
-                }`
+              ? (linkElement as HTMLAnchorElement).href || ''
               : '',
-            source: 'indeed',
+            source: 'google',
           };
         })
-        .filter((job) => job.title && job.company); // Filter out empty results
+        .filter((job) => job.title && job.company && job.url); // Filter out empty results
     });
 
     await page.close();
-    logger.info(`Scraped ${jobs.length} jobs from Indeed`);
+    logger.info(`Scraped ${jobs.length} jobs from Google Jobs`);
     return jobs;
   } catch (error) {
-    logger.error('Error scraping Indeed:', error);
+    logger.error('Error scraping Google Jobs:', error);
     return [];
   }
 };
@@ -207,22 +208,21 @@ export const getJobDescription = async (
         '.show-more-less-html__markup',
         (el) => el.textContent?.trim() || ''
       );
-    } else if (jobUrl.includes('indeed.com')) {
-      // Try multiple selectors for job description
+    } else if (jobUrl.includes('google.com')) {
+      // Try multiple selectors for Google Jobs description
       try {
         await page.waitForSelector(
-          '#jobDescriptionText, .jobsearch-jobDescriptionText, [data-testid="jobsearch-JobComponent-description"]',
+          '.HBvzbc, .YgLbBe, [data-test-id="job-description"], .g9WBQb',
           { timeout: 5000 }
         );
 
         // Try different selectors in order of preference
         const descriptionElement =
-          (await page.$('#jobDescriptionText')) ||
-          (await page.$('.jobsearch-jobDescriptionText')) ||
-          (await page.$(
-            '[data-testid="jobsearch-JobComponent-description"]'
-          )) ||
-          (await page.$('.jobDescriptionContent'));
+          (await page.$('.HBvzbc')) ||
+          (await page.$('.YgLbBe')) ||
+          (await page.$('[data-test-id="job-description"]')) ||
+          (await page.$('.g9WBQb')) ||
+          (await page.$('.Qk80Jf'));
 
         if (descriptionElement) {
           description = await page.evaluate(
@@ -286,42 +286,60 @@ export const enrichJobsWithDescriptions = async (
 };
 
 /**
- * Search for jobs across multiple platforms and save to database
+ * Weekly job processing: scrape → analyze → save with refresh pattern
  */
-export const scrapeAndSaveJobs = async (
+export const runWeeklyJobProcessing = async (
   searchParams: SearchParams
 ): Promise<number> => {
   const browser = await createBrowser();
 
   try {
-    // Scrape from multiple sources
-    const [linkedInJobs, indeedJobs] = await Promise.all([
+    logger.info('Starting weekly job processing...');
+
+    // Step 1: Scrape from multiple sources
+    logger.info('Step 1: Scraping jobs...');
+    const [linkedInJobs, googleJobs] = await Promise.all([
       scrapeLinkedIn(browser, searchParams),
-      scrapeIndeed(browser, searchParams),
+      scrapeGoogleJobs(browser, searchParams),
     ]);
 
-    const allJobs = [...linkedInJobs, ...indeedJobs];
-
-    // Remove duplicates
+    const allJobs = [...linkedInJobs, ...googleJobs];
     const uniqueJobs = removeDuplicateJobs(allJobs);
 
-    logger.info(`Found ${uniqueJobs.length} unique jobs after deduplication`);
+    logger.info(`Scraped ${uniqueJobs.length} unique jobs`);
 
-    // Fetch detailed descriptions for all jobs
+    if (uniqueJobs.length === 0) {
+      logger.warn('No jobs found during scraping');
+      return 0;
+    }
+
+    // Step 2: Fetch detailed descriptions
+    logger.info('Step 2: Fetching job descriptions...');
     const enrichedJobs = await enrichJobsWithDescriptions(browser, uniqueJobs);
 
-    // Save to database
-    const savedCount = await saveJobs(enrichedJobs);
+    // Step 3: Analyze jobs with AI
+    logger.info('Step 3: Analyzing jobs with AI...');
+    const hfClient = createHuggingFaceClient(config.huggingFaceApiKey || '');
+    const analyzedJobs = await analyzeJobs(
+      hfClient,
+      enrichedJobs,
+      config.jobCriteria,
+      enrichedJobs.length // Analyze all jobs
+    );
 
+    // Step 4: Weekly refresh in database
+    logger.info('Step 4: Saving to database with weekly refresh...');
+    const savedCount = await weeklyRefreshJobs(analyzedJobs);
+
+    logger.info(`Weekly job processing complete: ${savedCount} new jobs added`);
     return savedCount;
   } catch (error) {
-    logger.error('Error in job scraping and saving:', error);
+    logger.error('Error in weekly job processing:', error);
     throw error;
   } finally {
     await closeBrowser(browser);
   }
 };
-
 /**
  * Search for jobs across multiple platforms (legacy function)
  */
@@ -332,12 +350,12 @@ export const searchJobs = async (
 
   try {
     // Scrape from multiple sources
-    const [linkedInJobs, indeedJobs] = await Promise.all([
+    const [linkedInJobs, googleJobs] = await Promise.all([
       scrapeLinkedIn(browser, searchParams),
-      scrapeIndeed(browser, searchParams),
+      scrapeGoogleJobs(browser, searchParams),
     ]);
 
-    const allJobs = [...linkedInJobs, ...indeedJobs];
+    const allJobs = [...linkedInJobs, ...googleJobs];
 
     // Remove duplicates
     const uniqueJobs = removeDuplicateJobs(allJobs);
@@ -360,10 +378,10 @@ export default {
   createBrowser,
   closeBrowser,
   scrapeLinkedIn,
-  scrapeIndeed,
+  scrapeGoogleJobs,
   getJobDescription,
   removeDuplicateJobs,
   enrichJobsWithDescriptions,
   searchJobs,
-  scrapeAndSaveJobs,
+  runWeeklyJobProcessing,
 };

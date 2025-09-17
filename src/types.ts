@@ -53,6 +53,7 @@ export interface EmailConfig {
 
 export interface AppConfig {
   openaiApiKey: string;
+  huggingFaceApiKey: string;
   email: EmailConfig;
   user: UserInfo;
   jobCriteria: UserCriteria;
@@ -70,13 +71,6 @@ export interface AppConfig {
     maxJobsToAnalyze: number;
     batchSize: number;
     scoreThreshold: number;
-  };
-  openai: {
-    model: string;
-    maxTokens: number;
-    requestsPerMinute: number;
-    requestsPerDay: number;
-    delayBetweenRequests: number;
   };
   logging: {
     level: string;

@@ -1,6 +1,5 @@
-import OpenAI from 'openai';
+import { InferenceClient } from '@huggingface/inference';
 import { logger } from './utils/logger.js';
-import { config } from './config.js';
 import {
   getJobsToAnalyze,
   updateJobAnalysis,
@@ -9,7 +8,7 @@ import {
 import type { JobPosting, UserCriteria } from './types.js';
 
 /**
- * Rate limiter to track OpenAI API usage
+ * Rate limiter to track Hugging Face API usage
  */
 class RateLimiter {
   private dailyRequests: number = 0;
@@ -32,25 +31,28 @@ class RateLimiter {
       this.lastDayReset = now;
     }
 
-    // Check if we've exceeded limits
-    if (this.dailyRequests >= config.openai.requestsPerDay) {
-      throw new Error(
-        `Daily OpenAI request limit reached (${config.openai.requestsPerDay})`
-      );
-    }
-
-    if (this.minuteRequests >= config.openai.requestsPerMinute) {
+    // Hugging Face free tier: 1000 requests/month (~33/day), 10/minute
+    if (this.minuteRequests >= 10) {
+      const waitTime = 60000 - (now - this.lastMinuteReset);
       logger.info('Minute rate limit reached, waiting...');
-      await new Promise((resolve) => setTimeout(resolve, 60000));
+      await new Promise((resolve) => setTimeout(resolve, waitTime + 1000));
       this.minuteRequests = 0;
       this.lastMinuteReset = Date.now();
+    }
+
+    if (this.dailyRequests >= 33) {
+      const waitTime = 24 * 60 * 60 * 1000 - (now - this.lastDayReset);
+      logger.warn('Daily rate limit reached, waiting until tomorrow...');
+      await new Promise((resolve) => setTimeout(resolve, waitTime + 1000));
+      this.dailyRequests = 0;
+      this.lastDayReset = Date.now();
     }
 
     this.minuteRequests++;
     this.dailyRequests++;
 
     logger.info(
-      `OpenAI API usage: ${this.minuteRequests}/${config.openai.requestsPerMinute} per minute, ${this.dailyRequests}/${config.openai.requestsPerDay} per day`
+      `Hugging Face API usage: ${this.minuteRequests}/10 per minute, ${this.dailyRequests}/33 per day`
     );
   }
 }
@@ -58,10 +60,10 @@ class RateLimiter {
 const rateLimiter = new RateLimiter();
 
 /**
- * Create OpenAI client
+ * Create Hugging Face client
  */
-export const createOpenAIClient = (apiKey: string): OpenAI => {
-  return new OpenAI({ apiKey });
+export const createHuggingFaceClient = (apiKey: string): InferenceClient => {
+  return new InferenceClient(apiKey);
 };
 
 /**
@@ -129,10 +131,10 @@ export const parseAnalysisResponse = (
 };
 
 /**
- * Analyze a single job posting and return a score with reasoning
+ * Analyze a single job posting and return a score
  */
 export const analyzeJob = async (
-  openaiClient: OpenAI,
+  hfClient: InferenceClient,
   job: JobPosting,
   userCriteria: UserCriteria
 ): Promise<JobPosting> => {
@@ -144,34 +146,32 @@ export const analyzeJob = async (
 
     logger.info(`Analyzing job: ${job.title} at ${job.company}`);
 
-    const completion = await openaiClient.chat.completions.create({
-      model: config.openai.model,
+    // Use Hugging Face's chat completion model
+    const response = await hfClient.chatCompletion({
+      model: 'mistralai/Mistral-7B-Instruct-v0.2',
       messages: [
         {
-          role: 'system',
-          content:
-            "You are an expert career advisor and job analyst for software developers. Your job is to analyze job postings and score them based on how well they match a candidate's criteria and preferences.",
-        },
-        {
           role: 'user',
-          content: prompt,
+          content: `You are an expert career advisor with software developers. Analyze this job posting and provide a score from 0-100 based on how well it matches the criteria.
+
+${prompt}
+
+Respond with JSON format: {"score": 85 }`,
         },
       ],
+      max_tokens: 300,
       temperature: 0.3,
-      max_tokens: config.openai.maxTokens,
     });
 
-    const response = completion.choices[0]?.message?.content;
-    if (!response) {
-      throw new Error('No response from OpenAI');
+    const responseText = response.choices?.[0]?.message?.content?.trim();
+    if (!responseText) {
+      throw new Error('No response from Hugging Face');
     }
 
-    const result = parseAnalysisResponse(response, job);
+    const result = parseAnalysisResponse(responseText, job);
 
     // Add delay between requests to respect rate limits
-    await new Promise((resolve) =>
-      setTimeout(resolve, config.openai.delayBetweenRequests)
-    );
+    await new Promise((resolve) => setTimeout(resolve, 6000)); // 6 seconds for 10/minute limit
 
     return result;
   } catch (error) {
@@ -187,7 +187,7 @@ export const analyzeJob = async (
  * Process jobs in batches to avoid rate limits
  */
 export const analyzeJobsBatch = async (
-  openaiClient: OpenAI,
+  hfClient: InferenceClient,
   jobs: JobPosting[],
   userCriteria: UserCriteria,
   batchSize: number = 1
@@ -199,7 +199,7 @@ export const analyzeJobsBatch = async (
     const job = jobs[i];
     if (job) {
       logger.info(`Analyzing job ${i + 1}/${jobs.length}: ${job.title}`);
-      const analyzedJob = await analyzeJob(openaiClient, job, userCriteria);
+      const analyzedJob = await analyzeJob(hfClient, job, userCriteria);
       analyzedJobs.push(analyzedJob);
     }
   }
@@ -211,7 +211,7 @@ export const analyzeJobsBatch = async (
  * Analyze multiple jobs and return them sorted by score
  */
 export const analyzeJobs = async (
-  openaiClient: OpenAI,
+  hfClient: InferenceClient,
   jobs: JobPosting[],
   userCriteria: UserCriteria,
   maxJobs: number = 50
@@ -220,7 +220,7 @@ export const analyzeJobs = async (
 
   const jobsToAnalyze = jobs.slice(0, maxJobs);
   const analyzedJobs = await analyzeJobsBatch(
-    openaiClient,
+    hfClient,
     jobsToAnalyze,
     userCriteria
   );
@@ -239,7 +239,7 @@ export const analyzeJobs = async (
  * Analyze pending jobs from database (daily limit: 8-9 jobs)
  */
 export const analyzePendingJobs = async (
-  openaiClient: OpenAI,
+  hfClient: InferenceClient,
   userCriteria: UserCriteria
 ): Promise<number> => {
   const rateLimiter = new RateLimiter();
@@ -261,7 +261,7 @@ export const analyzePendingJobs = async (
       try {
         await rateLimiter.checkRateLimit();
 
-        const analyzedJob = await analyzeJob(openaiClient, job, userCriteria);
+        const analyzedJob = await analyzeJob(hfClient, job, userCriteria);
         const score = analyzedJob.score || 0;
 
         if (job._id) {
@@ -272,10 +272,8 @@ export const analyzePendingJobs = async (
           );
         }
 
-        // Wait between requests
-        await new Promise((resolve) =>
-          setTimeout(resolve, config.openai.delayBetweenRequests)
-        );
+        // Wait between requests (6 seconds for Hugging Face)
+        await new Promise((resolve) => setTimeout(resolve, 6000));
       } catch (error) {
         logger.error(`Failed to analyze job: ${job.title}`, error);
 
@@ -294,7 +292,7 @@ export const analyzePendingJobs = async (
 };
 
 export default {
-  createOpenAIClient,
+  createHuggingFaceClient,
   buildAnalysisPrompt,
   parseAnalysisResponse,
   analyzeJob,

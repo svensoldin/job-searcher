@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import handlebars from 'handlebars';
 import { logger } from './utils/logger.js';
-import { getBestJobs } from './database.js';
+import { getJobsByScore } from './database.js';
 import type { JobPosting, EmailConfig, EmailData } from './types.js';
 
 /**
@@ -218,7 +218,7 @@ export const sendBestJobsEmail = async (
   try {
     logger.info('Fetching best jobs from database...');
 
-    const bestJobs = await getBestJobs(maxJobs);
+    const bestJobs = await getJobsByScore(maxJobs);
 
     if (bestJobs.length === 0) {
       logger.info('No analyzed jobs with good scores found');
