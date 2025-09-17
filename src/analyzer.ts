@@ -4,6 +4,7 @@ import {
   getJobsToAnalyze,
   updateJobAnalysis,
   markJobAnalysisFailed,
+  saveJobToDatabase,
 } from './database.js';
 import type { JobPosting, UserCriteria } from './types.js';
 
@@ -149,6 +150,7 @@ export const analyzeJob = async (
     // Use Hugging Face's chat completion model
     const response = await hfClient.chatCompletion({
       model: 'mistralai/Mistral-7B-Instruct-v0.2',
+      provider: 'featherless-ai',
       messages: [
         {
           role: 'user',
@@ -291,6 +293,70 @@ export const analyzePendingJobs = async (
   }
 };
 
+/**
+ * Analyze jobs and save them incrementally (prevents losing progress on rate limits)
+ */
+export const analyzeAndSaveJobsIncremental = async (
+  hfClient: InferenceClient,
+  jobs: JobPosting[],
+  userCriteria: UserCriteria
+): Promise<{ analyzed: number; saved: number; failed: number }> => {
+  let analyzed = 0;
+  let saved = 0;
+  let failed = 0;
+
+  logger.info(`Starting incremental analysis of ${jobs.length} jobs`);
+
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i];
+    if (!job) continue;
+
+    try {
+      logger.info(`Analyzing job ${i + 1}/${jobs.length}: ${job.title}`);
+
+      // Analyze the job
+      const analyzedJob = await analyzeJob(hfClient, job, userCriteria);
+      analyzed++;
+
+      // Save immediately to database
+      const wasSaved = await saveJobToDatabase(analyzedJob);
+      if (wasSaved) {
+        saved++;
+      }
+
+      logger.info(`✅ Completed ${job.title} - Score: ${analyzedJob.score}`);
+    } catch (error) {
+      failed++;
+      logger.error(`❌ Failed to analyze job ${job.title}:`, error);
+
+      // Save the job without analysis (score = 0) so we don't lose it
+      try {
+        await saveJobToDatabase({ ...job, score: 0 });
+        saved++;
+        logger.info(`💾 Saved failed job to database: ${job.title}`);
+      } catch (saveError) {
+        logger.error(`Failed to save failed job: ${job.title}`, saveError);
+      }
+
+      // If it's a rate limit error, break the loop to preserve progress
+      if (
+        error instanceof Error &&
+        (error.message?.includes('rate limit') ||
+          error.message?.includes('quota'))
+      ) {
+        logger.warn(
+          `⏸️  Rate limit reached. Stopping analysis. Progress saved: ${analyzed} analyzed, ${saved} saved`
+        );
+        break;
+      }
+    }
+  }
+
+  const results = { analyzed, saved, failed };
+  logger.info(`📊 Incremental analysis complete:`, results);
+  return results;
+};
+
 export default {
   createHuggingFaceClient,
   buildAnalysisPrompt,
@@ -298,5 +364,6 @@ export default {
   analyzeJob,
   analyzeJobsBatch,
   analyzeJobs,
+  analyzeAndSaveJobsIncremental,
   analyzePendingJobs,
 };

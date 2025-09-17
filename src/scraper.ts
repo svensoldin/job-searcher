@@ -1,7 +1,10 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { logger } from './utils/logger.js';
 import { weeklyRefreshJobs } from './database.js';
-import { analyzeJobs, createHuggingFaceClient } from './analyzer.js';
+import {
+  analyzeAndSaveJobsIncremental,
+  createHuggingFaceClient,
+} from './analyzer.js';
 import { config } from './config.js';
 import type { JobPosting, SearchParams } from './types.js';
 
@@ -317,22 +320,19 @@ export const runWeeklyJobProcessing = async (
     logger.info('Step 2: Fetching job descriptions...');
     const enrichedJobs = await enrichJobsWithDescriptions(browser, uniqueJobs);
 
-    // Step 3: Analyze jobs with AI
-    logger.info('Step 3: Analyzing jobs with AI...');
+    // Step 3: Analyze jobs with AI and save incrementally
+    logger.info('Step 3: Analyzing jobs with AI (saving progress as we go)...');
     const hfClient = createHuggingFaceClient(config.huggingFaceApiKey || '');
-    const analyzedJobs = await analyzeJobs(
+    const results = await analyzeAndSaveJobsIncremental(
       hfClient,
       enrichedJobs,
-      config.jobCriteria,
-      enrichedJobs.length // Analyze all jobs
+      config.jobCriteria
     );
 
-    // Step 4: Weekly refresh in database
-    logger.info('Step 4: Saving to database with weekly refresh...');
-    const savedCount = await weeklyRefreshJobs(analyzedJobs);
-
-    logger.info(`Weekly job processing complete: ${savedCount} new jobs added`);
-    return savedCount;
+    logger.info(
+      `Analysis complete: ${results.analyzed} analyzed, ${results.saved} saved, ${results.failed} failed`
+    );
+    return results.saved;
   } catch (error) {
     logger.error('Error in weekly job processing:', error);
     throw error;

@@ -283,11 +283,45 @@ export const getDatabaseStats = async (): Promise<{
   }
 };
 
+/**
+ * Save a single job to database with deduplication
+ */
+export const saveJobToDatabase = async (job: JobPosting): Promise<boolean> => {
+  try {
+    const hash = createJobHash(job);
+
+    // Check if job already exists
+    const existingJob = await Job.findOne({ hash });
+    if (existingJob) {
+      logger.debug(`Job already exists: ${job.title} at ${job.company}`);
+      return false;
+    }
+
+    // Save new job
+    const jobToSave = {
+      ...job,
+      hash,
+      analysis_status: 'analyzed',
+      scraped_at: new Date(),
+    };
+
+    await Job.create(jobToSave);
+    logger.info(
+      `Saved job to database: ${job.title} at ${job.company} (Score: ${job.score})`
+    );
+    return true;
+  } catch (error) {
+    logger.error(`Failed to save job: ${job.title}`, error);
+    return false;
+  }
+};
+
 export default {
   Job,
   connectDatabase,
   disconnectDatabase,
   createJobHash,
+  saveJobToDatabase,
   weeklyRefreshJobs,
   removeDuplicateJobs,
   getJobsByScore,
