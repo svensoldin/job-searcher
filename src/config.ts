@@ -59,8 +59,9 @@ export const jobCriteria: UserCriteria = {
       ? parseArray(process.env.JOB_LOCATIONS)
       : ['Remote'],
   experienceLevel: process.env.EXPERIENCE_LEVEL || 'Mid-level',
-  requiredSkills: parseArray(process.env.CORE_SKILLS),
+  coreSkills: parseArray(process.env.CORE_SKILLS),
   remotePreference: process.env.REMOTE_PREFERENCE || 'Remote preferred',
+  excludedKeywords: parseArray(process.env.EXCLUDED_KEYWORDS),
 };
 
 /**

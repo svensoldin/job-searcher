@@ -83,7 +83,7 @@ Company: ${job.company}
 Description: ${job.description || 'No description available'}
 
 CANDIDATE CRITERIA:
-Skills Required: ${userCriteria.requiredSkills?.join(', ') || 'Not specified'}
+Skills Required: ${userCriteria.coreSkills?.join(', ') || 'Not specified'}
 Experience Level: ${userCriteria.experienceLevel || 'Not specified'}
 Location Preferences: ${userCriteria.locations?.join(', ') || 'Not specified'}
 Remote Work Preference: ${userCriteria.remotePreference || 'Not specified'}

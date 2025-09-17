@@ -27,8 +27,9 @@ export interface UserCriteria {
   keywords: string[];
   locations: string[];
   experienceLevel: string;
-  requiredSkills: string[];
+  coreSkills: string[];
   remotePreference: string;
+  excludedKeywords?: string[];
 }
 
 export interface UserInfo {
