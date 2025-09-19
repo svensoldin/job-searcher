@@ -1,10 +1,7 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { logger } from './utils/logger.js';
-import { weeklyRefreshJobs } from './database.js';
-import {
-  analyzeAndSaveJobsIncremental,
-  createHuggingFaceClient,
-} from './analyzer.js';
+import { saveJobToDatabase } from './database.js';
+import { analyzeJob } from './analyzers/rule-based.js';
 import { config } from './config.js';
 import type { JobPosting, SearchParams } from './types.js';
 
@@ -289,6 +286,57 @@ export const enrichJobsWithDescriptions = async (
 };
 
 /**
+ * Analyze jobs using rule-based analyzer and save them incrementally
+ */
+export const analyzeAndSaveJobsIncremental = async (
+  jobs: JobPosting[],
+  userCriteria: any
+): Promise<{ analyzed: number; saved: number; failed: number }> => {
+  let analyzed = 0;
+  let saved = 0;
+  let failed = 0;
+
+  logger.info(`Starting incremental analysis of ${jobs.length} jobs`);
+
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i];
+    if (!job) continue;
+
+    try {
+      logger.info(`Analyzing job ${i + 1}/${jobs.length}: ${job.title}`);
+
+      // Analyze the job using rule-based analyzer (instant, no API calls)
+      const analyzedJob = analyzeJob(job, userCriteria);
+      analyzed++;
+
+      // Save immediately to database
+      const wasSaved = await saveJobToDatabase(analyzedJob);
+      if (wasSaved) {
+        saved++;
+      }
+
+      logger.info(`✅ Completed ${job.title} - Score: ${analyzedJob.score}`);
+    } catch (error) {
+      failed++;
+      logger.error(`❌ Failed to analyze job ${job.title}:`, error);
+
+      // Save the job without analysis (score = 0) so we don't lose it
+      try {
+        await saveJobToDatabase({ ...job, score: 0 });
+        saved++;
+        logger.info(`💾 Saved failed job to database: ${job.title}`);
+      } catch (saveError) {
+        logger.error(`Failed to save failed job: ${job.title}`, saveError);
+      }
+    }
+  }
+
+  const results = { analyzed, saved, failed };
+  logger.info(`📊 Incremental analysis complete:`, results);
+  return results;
+};
+
+/**
  * Weekly job processing: scrape → analyze → save with refresh pattern
  */
 export const runWeeklyJobProcessing = async (
@@ -320,11 +368,11 @@ export const runWeeklyJobProcessing = async (
     logger.info('Step 2: Fetching job descriptions...');
     const enrichedJobs = await enrichJobsWithDescriptions(browser, uniqueJobs);
 
-    // Step 3: Analyze jobs with AI and save incrementally
-    logger.info('Step 3: Analyzing jobs with AI (saving progress as we go)...');
-    const hfClient = createHuggingFaceClient(config.huggingFaceApiKey || '');
+    // Step 3: Analyze jobs with rule-based analyzer and save incrementally
+    logger.info(
+      'Step 3: Analyzing jobs with rule-based analyzer (saving progress as we go)...'
+    );
     const results = await analyzeAndSaveJobsIncremental(
-      hfClient,
       enrichedJobs,
       config.jobCriteria
     );
@@ -382,6 +430,7 @@ export default {
   getJobDescription,
   removeDuplicateJobs,
   enrichJobsWithDescriptions,
+  analyzeAndSaveJobsIncremental,
   searchJobs,
   runWeeklyJobProcessing,
 };

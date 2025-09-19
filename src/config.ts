@@ -110,30 +110,14 @@ export const config: AppConfig = {
 /**
  * Required configuration fields
  */
-const REQUIRED_FIELDS = ['huggingFaceApiKey'] as const;
+const REQUIRED_FIELDS = [] as const; // No longer require Hugging Face API key since we use rule-based analysis
 
 /**
  * Validate required configuration
  */
 export function validateConfig(): void {
-  const missing: string[] = [];
-
-  for (const field of REQUIRED_FIELDS) {
-    const keys = field.split('.');
-    let value: any = config;
-
-    for (const key of keys) {
-      value = value?.[key];
-    }
-
-    if (!value) {
-      missing.push(field);
-    }
-  }
-
-  if (missing.length > 0) {
-    throw new Error(`Missing required configuration: ${missing.join(', ')}`);
-  }
+  // No required fields for rule-based analysis
+  console.log('Configuration validation passed - using rule-based analyzer');
 }
 
 /**

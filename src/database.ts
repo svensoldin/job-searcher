@@ -24,7 +24,6 @@ const jobSchema = new mongoose.Schema({
 
 // Index for faster queries
 jobSchema.index({ analysis_status: 1, scraped_at: -1 });
-jobSchema.index({ hash: 1 });
 
 export const Job = mongoose.model('Job', jobSchema);
 
@@ -38,6 +37,7 @@ export const connectDatabase = async (): Promise<void> => {
       throw new Error('MONGO_URL environment variable is required');
     }
 
+    logger.info('Connecting to MongoDB...');
     await mongoose.connect(mongoUrl);
     logger.info('Connected to MongoDB successfully');
   } catch (error) {

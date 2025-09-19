@@ -1,12 +1,12 @@
 import { InferenceClient } from '@huggingface/inference';
-import { logger } from './utils/logger.js';
+import { logger } from '../utils/logger.js';
 import {
   getJobsToAnalyze,
   updateJobAnalysis,
   markJobAnalysisFailed,
   saveJobToDatabase,
-} from './database.js';
-import type { JobPosting, UserCriteria } from './types.js';
+} from '../database.js';
+import type { JobPosting, UserCriteria } from '../types.js';
 
 /**
  * Rate limiter to track Hugging Face API usage
