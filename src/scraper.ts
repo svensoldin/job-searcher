@@ -1,6 +1,6 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { logger } from './utils/logger.js';
-import { saveJobToDatabase } from './database.js';
+import { saveJobToDatabase, Job, createJobHash } from './database.js';
 import { analyzeJob } from './analyzers/rule-based.js';
 import { config } from './config.js';
 import type { JobPosting, SearchParams } from './types.js';
@@ -88,99 +88,109 @@ export const scrapeLinkedIn = async (
 };
 
 /**
- * Search for jobs on Google Jobs
+ * Search for jobs on Welcome to the Jungle
  */
-export const scrapeGoogleJobs = async (
+
+const welcomeToTheJungleJobSelector = '.ais-Hits-list-item';
+export const scrapeWelcomeToTheJungle = async (
   browser: Browser,
   searchParams: SearchParams
 ): Promise<JobPosting[]> => {
   const { keywords, location } = searchParams;
-  const url = `https://www.google.com/search?q=${encodeURIComponent(
-    keywords + ' jobs'
-  )}+${encodeURIComponent(location)}&ibp=htl;jobs`;
+  // Welcome to the Jungle search URL format
+  const baseUrl = 'https://www.welcometothejungle.com/fr/jobs';
+  const searchQuery = keywords.replace(/,/g, ' ').trim();
+  const url = `${baseUrl}?query=${encodeURIComponent(
+    searchQuery
+  )}&refinementList%5Boffices.country_code%5D%5B%5D=FR&refinementList%5Boffices.country_code%5D%5B%5D=remote`;
 
   try {
     const page: Page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'networkidle2' });
 
-    // Wait for job listings to load with multiple selectors as fallbacks
+    // Set user agent to avoid bot detection
+    await page.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // Wait for job listings to load
     try {
-      await page.waitForSelector(
-        '[data-ved][jsname] h3, .PwjeAc, [role="listitem"], .BjJfJf',
-        { timeout: 10000 }
-      );
+      await page.waitForSelector(welcomeToTheJungleJobSelector, {
+        timeout: 15000,
+      });
     } catch (selectorError) {
-      logger.warn('Primary selectors not found, trying alternative approach');
+      logger.warn(
+        'Welcome to the Jungle: Primary selectors not found, trying alternative approach'
+      );
       await page.waitForSelector('body', { timeout: 5000 });
     }
 
     const jobs: JobPosting[] = await page.evaluate(() => {
-      // Try multiple selector strategies for Google Jobs
+      // Try multiple selector strategies for Welcome to the Jungle
       let jobElements: NodeListOf<Element> | null = null;
 
-      // Strategy 1: Look for job listing items
-      jobElements = document.querySelectorAll('[role="listitem"]');
-
-      // Strategy 2: Look for job cards with specific patterns
-      if (jobElements.length === 0) {
-        jobElements = document.querySelectorAll('.PwjeAc');
-      }
-
-      // Strategy 3: Look for elements with job-specific attributes
-      if (jobElements.length === 0) {
-        jobElements = document.querySelectorAll('[data-ved][jsname]');
-      }
-
-      // Strategy 4: Look for job title containers
-      if (jobElements.length === 0) {
-        jobElements = document.querySelectorAll(
-          'div:has(.BjJfJf), div:has(h3)'
-        );
-      }
+      jobElements = document.querySelectorAll(welcomeToTheJungleJobSelector);
 
       return Array.from(jobElements)
         .map((element) => {
           // Try multiple selector patterns for job title
           let titleElement =
+            element.querySelector('[data-testid="job-title"]') ||
+            element.querySelector('h2') ||
             element.querySelector('h3') ||
-            element.querySelector('[role="heading"]') ||
-            element.querySelector('.BjJfJf') ||
-            element.querySelector('div[style*="font-weight"]') ||
-            element.querySelector('[data-test-id="job-title"]');
+            element.querySelector('[class*="title"]') ||
+            element.querySelector('a[href*="/jobs/"]');
 
           // Try multiple selector patterns for company name
           let companyElement =
-            element.querySelector('.vNEEBe') ||
-            element.querySelector('.nJlQNd') ||
-            element.querySelector('[data-test-id="employer-name"]') ||
-            element.querySelector('span[style*="color"]') ||
-            element.querySelector('.BjJfJf + div');
+            element.querySelector('[data-testid="company-name"]') ||
+            element.querySelector('[class*="company"]') ||
+            element.querySelector('[class*="organization"]') ||
+            element.querySelector('a[href*="/companies/"]');
 
-          // Try to find clickable elements for job links
+          // Try to find job links
           let linkElement =
-            element.querySelector('a[href*="jobs"]') ||
-            element.querySelector('a[data-ved]') ||
+            element.querySelector('a[href*="/jobs/"]') ||
+            element.querySelector('a[data-testid="job-link"]') ||
             element.querySelector('a');
 
+          let jobUrl = '';
+          if (linkElement) {
+            const href = (linkElement as HTMLAnchorElement).href;
+            // Ensure we have absolute URLs
+            if (href && href.startsWith('/')) {
+              jobUrl = `https://www.welcometothejungle.com${href}`;
+            } else if (
+              href &&
+              (href.startsWith('http://') || href.startsWith('https://'))
+            ) {
+              jobUrl = href;
+            }
+          }
+
+          const title = titleElement
+            ? titleElement.textContent?.trim() || ''
+            : '';
+          const company = companyElement
+            ? companyElement.textContent?.trim() || ''
+            : '';
+
           return {
-            title: titleElement ? titleElement.textContent?.trim() || '' : '',
-            company: companyElement
-              ? companyElement.textContent?.trim() || ''
-              : '',
-            url: linkElement
-              ? (linkElement as HTMLAnchorElement).href || ''
-              : '',
-            source: 'google',
+            title,
+            company,
+            url: jobUrl,
+            source: 'welcometothejungle',
           };
         })
         .filter((job) => job.title && job.company && job.url); // Filter out empty results
     });
 
     await page.close();
-    logger.info(`Scraped ${jobs.length} jobs from Google Jobs`);
+    logger.info(`Scraped ${jobs.length} jobs from Welcome to the Jungle`);
     return jobs;
   } catch (error) {
-    logger.error('Error scraping Google Jobs:', error);
+    logger.error('Error scraping Welcome to the Jungle:', error);
     return [];
   }
 };
@@ -208,21 +218,21 @@ export const getJobDescription = async (
         '.show-more-less-html__markup',
         (el) => el.textContent?.trim() || ''
       );
-    } else if (jobUrl.includes('google.com')) {
-      // Try multiple selectors for Google Jobs description
+    } else if (jobUrl.includes('welcometothejungle.com')) {
+      // Try multiple selectors for Welcome to the Jungle description
       try {
         await page.waitForSelector(
-          '.HBvzbc, .YgLbBe, [data-test-id="job-description"], .g9WBQb',
+          '[data-testid="job-description"], .sc-1g2uzm9-0, [class*="description"], .job-description, .sc-',
           { timeout: 5000 }
         );
 
-        // Try different selectors in order of preference
+        // Try different selectors in order of preference for WTTJ
         const descriptionElement =
-          (await page.$('.HBvzbc')) ||
-          (await page.$('.YgLbBe')) ||
-          (await page.$('[data-test-id="job-description"]')) ||
-          (await page.$('.g9WBQb')) ||
-          (await page.$('.Qk80Jf'));
+          (await page.$('[data-testid="job-description"]')) ||
+          (await page.$('.sc-1g2uzm9-0')) ||
+          (await page.$('[class*="description"]')) ||
+          (await page.$('.job-description')) ||
+          (await page.$('[class*="JobDescription"]'));
 
         if (descriptionElement) {
           description = await page.evaluate(
@@ -286,53 +296,109 @@ export const enrichJobsWithDescriptions = async (
 };
 
 /**
- * Analyze jobs using rule-based analyzer and save them incrementally
+ * Analyze jobs using rule-based analyzer and save them
  */
 export const analyzeAndSaveJobsIncremental = async (
   jobs: JobPosting[],
-  userCriteria: any
+  userCriteria: any,
+  incremental: boolean = false
 ): Promise<{ analyzed: number; saved: number; failed: number }> => {
   let analyzed = 0;
   let saved = 0;
   let failed = 0;
 
-  logger.info(`Starting incremental analysis of ${jobs.length} jobs`);
+  logger.info(
+    `Starting ${incremental ? 'incremental' : 'batch'} analysis of ${
+      jobs.length
+    } jobs`
+  );
+
+  // Helper function to analyze a single job
+  const analyzeJobSafely = (
+    job: JobPosting,
+    index: number
+  ): { analyzedJob: JobPosting | null; success: boolean } => {
+    try {
+      logger.info(`Analyzing job ${index + 1}/${jobs.length}: ${job.title}`);
+      const analyzedJob = analyzeJob(job, userCriteria);
+      logger.info(`✅ Analyzed ${job.title} - Score: ${analyzedJob.score}`);
+      return { analyzedJob, success: true };
+    } catch (error) {
+      logger.error(`❌ Failed to analyze job ${job.title}:`, error);
+      return { analyzedJob: { ...job, score: 0 }, success: false };
+    }
+  };
+
+  // Helper function to save a single job (for incremental mode)
+  const saveJobSafely = async (job: JobPosting): Promise<boolean> => {
+    try {
+      const wasSaved = await saveJobToDatabase(job);
+      if (wasSaved) {
+        logger.info(`💾 Saved ${job.title} to database`);
+        return true;
+      }
+      return false;
+    } catch (saveError) {
+      logger.error(`Failed to save job: ${job.title}`, saveError);
+      return false;
+    }
+  };
+
+  const processedJobs: JobPosting[] = [];
 
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i];
     if (!job) continue;
 
-    try {
-      logger.info(`Analyzing job ${i + 1}/${jobs.length}: ${job.title}`);
+    const { analyzedJob, success } = analyzeJobSafely(job, i);
 
-      // Analyze the job using rule-based analyzer (instant, no API calls)
-      const analyzedJob = analyzeJob(job, userCriteria);
+    if (success) {
       analyzed++;
-
-      // Save immediately to database
-      const wasSaved = await saveJobToDatabase(analyzedJob);
-      if (wasSaved) {
-        saved++;
-      }
-
-      logger.info(`✅ Completed ${job.title} - Score: ${analyzedJob.score}`);
-    } catch (error) {
+    } else {
       failed++;
-      logger.error(`❌ Failed to analyze job ${job.title}:`, error);
+    }
 
-      // Save the job without analysis (score = 0) so we don't lose it
-      try {
-        await saveJobToDatabase({ ...job, score: 0 });
-        saved++;
-        logger.info(`💾 Saved failed job to database: ${job.title}`);
-      } catch (saveError) {
-        logger.error(`Failed to save failed job: ${job.title}`, saveError);
+    if (analyzedJob) {
+      processedJobs.push(analyzedJob);
+
+      // In incremental mode, save immediately
+      if (incremental) {
+        const wasSaved = await saveJobSafely(analyzedJob);
+        if (wasSaved) {
+          saved++;
+        }
       }
     }
   }
 
+  // In batch mode, save all jobs at once
+  if (!incremental) {
+    try {
+      if (processedJobs.length > 0) {
+        const jobsToInsert = processedJobs.map((job) => ({
+          ...job,
+          hash: createJobHash(job),
+          analysis_status: 'analyzed',
+          scraped_at: new Date(),
+        }));
+
+        await Job.insertMany(jobsToInsert, { ordered: false });
+        saved = processedJobs.length;
+        logger.info(`💾 Batch saved ${saved} jobs to database`);
+      }
+    } catch (saveError) {
+      logger.error('Failed to batch save jobs:', saveError);
+      // Fall back to incremental saving
+      logger.info('Falling back to incremental saving...');
+      return analyzeAndSaveJobsIncremental(jobs, userCriteria, true);
+    }
+  }
+
   const results = { analyzed, saved, failed };
-  logger.info(`📊 Incremental analysis complete:`, results);
+  logger.info(
+    `📊 ${incremental ? 'Incremental' : 'Batch'} analysis complete:`,
+    results
+  );
   return results;
 };
 
@@ -349,12 +415,12 @@ export const runWeeklyJobProcessing = async (
 
     // Step 1: Scrape from multiple sources
     logger.info('Step 1: Scraping jobs...');
-    const [linkedInJobs, googleJobs] = await Promise.all([
+    const [linkedInJobs, welcomeToTheJungleJobs] = await Promise.all([
       scrapeLinkedIn(browser, searchParams),
-      scrapeGoogleJobs(browser, searchParams),
+      scrapeWelcomeToTheJungle(browser, searchParams),
     ]);
 
-    const allJobs = [...linkedInJobs, ...googleJobs];
+    const allJobs = [...linkedInJobs, ...welcomeToTheJungleJobs];
     const uniqueJobs = removeDuplicateJobs(allJobs);
 
     logger.info(`Scraped ${uniqueJobs.length} unique jobs`);
@@ -368,9 +434,9 @@ export const runWeeklyJobProcessing = async (
     logger.info('Step 2: Fetching job descriptions...');
     const enrichedJobs = await enrichJobsWithDescriptions(browser, uniqueJobs);
 
-    // Step 3: Analyze jobs with rule-based analyzer and save incrementally
+    // Step 3: Analyze jobs with rule-based analyzer and save in batch
     logger.info(
-      'Step 3: Analyzing jobs with rule-based analyzer (saving progress as we go)...'
+      'Step 3: Analyzing jobs with rule-based analyzer (batch saving)...'
     );
     const results = await analyzeAndSaveJobsIncremental(
       enrichedJobs,
@@ -388,49 +454,15 @@ export const runWeeklyJobProcessing = async (
     await closeBrowser(browser);
   }
 };
-/**
- * Search for jobs across multiple platforms (legacy function)
- */
-export const searchJobs = async (
-  searchParams: SearchParams
-): Promise<JobPosting[]> => {
-  const browser = await createBrowser();
-
-  try {
-    // Scrape from multiple sources
-    const [linkedInJobs, googleJobs] = await Promise.all([
-      scrapeLinkedIn(browser, searchParams),
-      scrapeGoogleJobs(browser, searchParams),
-    ]);
-
-    const allJobs = [...linkedInJobs, ...googleJobs];
-
-    // Remove duplicates
-    const uniqueJobs = removeDuplicateJobs(allJobs);
-
-    logger.info(`Found ${uniqueJobs.length} unique jobs after deduplication`);
-
-    // Fetch detailed descriptions for top jobs
-    const enrichedJobs = await enrichJobsWithDescriptions(browser, uniqueJobs);
-
-    return enrichedJobs;
-  } catch (error) {
-    logger.error('Error in job search:', error);
-    throw error;
-  } finally {
-    await closeBrowser(browser);
-  }
-};
 
 export default {
   createBrowser,
   closeBrowser,
   scrapeLinkedIn,
-  scrapeGoogleJobs,
+  scrapeWelcomeToTheJungle,
   getJobDescription,
   removeDuplicateJobs,
   enrichJobsWithDescriptions,
   analyzeAndSaveJobsIncremental,
-  searchJobs,
   runWeeklyJobProcessing,
 };

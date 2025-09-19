@@ -10,7 +10,6 @@ import {
   connectDatabase,
   disconnectDatabase,
   getDatabaseStats,
-  weeklyRefreshJobs,
 } from './database.js';
 import { runWeeklyJobProcessing } from './scraper.js';
 import { logger } from './utils/logger.js';
