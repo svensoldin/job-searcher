@@ -1,9 +1,25 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
-import { logger } from './utils/logger.js';
-import { saveJobToDatabase, Job, createJobHash } from './database.js';
 import { analyzeJob } from './analyzers/rule-based.js';
 import { config } from './config.js';
+import { createJobHash, Job, saveJobToDatabase } from './database.js';
+import { logger } from './utils/logger.js';
+import puppeteer, { Browser, Page } from 'puppeteer';
+
 import type { JobPosting, SearchParams } from './types.js';
+
+/**
+ * Purge all existing jobs from database before weekly refresh
+ */
+export const purgeExistingJobs = async (): Promise<number> => {
+  try {
+    const deleteResult = await Job.deleteMany({});
+    const deletedCount = deleteResult.deletedCount || 0;
+    logger.info(`🗑️  Purged ${deletedCount} existing jobs from database`);
+    return deletedCount;
+  } catch (error) {
+    logger.error('Error purging existing jobs:', error);
+    throw error;
+  }
+};
 
 /**
  * Create and initialize a browser instance
@@ -102,7 +118,7 @@ export const scrapeWelcomeToTheJungle = async (
   const searchQuery = keywords.replace(/,/g, ' ').trim();
   const url = `${baseUrl}?query=${encodeURIComponent(
     searchQuery
-  )}&refinementList%5Boffices.country_code%5D%5B%5D=FR&refinementList%5Boffices.country_code%5D%5B%5D=remote`;
+  )}refinementList[offices.country_code][]=FR&refinementList[remote][]=fulltime&refinementList[benefits][]=Ouvert au télétravail total&collections[]=digital_nomad`;
 
   try {
     const page: Page = await browser.newPage();
@@ -127,63 +143,47 @@ export const scrapeWelcomeToTheJungle = async (
     }
 
     const jobs: JobPosting[] = await page.evaluate(() => {
-      // Try multiple selector strategies for Welcome to the Jungle
-      let jobElements: NodeListOf<Element> | null = null;
+      // Get all job links
+      const jobLinks = Array.from(
+        document.querySelectorAll('a[href*="/jobs/"]')
+      );
 
-      jobElements = document.querySelectorAll(welcomeToTheJungleJobSelector);
+      // Process job links to extract job information
+      const jobsMap = new Map(); // Use Map to avoid duplicates
 
-      return Array.from(jobElements)
-        .map((element) => {
-          // Try multiple selector patterns for job title
-          let titleElement =
-            element.querySelector('[data-testid="job-title"]') ||
-            element.querySelector('h2') ||
-            element.querySelector('h3') ||
-            element.querySelector('[class*="title"]') ||
-            element.querySelector('a[href*="/jobs/"]');
+      for (const link of jobLinks) {
+        const href = (link as HTMLAnchorElement).href;
+        const linkText = link.textContent?.trim() || '';
 
-          // Try multiple selector patterns for company name
-          let companyElement =
-            element.querySelector('[data-testid="company-name"]') ||
-            element.querySelector('[class*="company"]') ||
-            element.querySelector('[class*="organization"]') ||
-            element.querySelector('a[href*="/companies/"]');
+        // Skip empty links (probably image links)
+        if (!linkText) continue;
 
-          // Try to find job links
-          let linkElement =
-            element.querySelector('a[href*="/jobs/"]') ||
-            element.querySelector('a[data-testid="job-link"]') ||
-            element.querySelector('a');
+        // Extract company name from URL (format: /fr/companies/company-name/jobs/...)
+        const urlMatch = href.match(/\/companies\/([^\/]+)\/jobs\//);
+        const companySlug = urlMatch ? urlMatch[1] : '';
 
-          let jobUrl = '';
-          if (linkElement) {
-            const href = (linkElement as HTMLAnchorElement).href;
-            // Ensure we have absolute URLs
-            if (href && href.startsWith('/')) {
-              jobUrl = `https://www.welcometothejungle.com${href}`;
-            } else if (
-              href &&
-              (href.startsWith('http://') || href.startsWith('https://'))
-            ) {
-              jobUrl = href;
-            }
-          }
+        // Clean up company name (remove hyphens, capitalize)
+        const company = companySlug
+          ? companySlug
+              .split('-')
+              .map(
+                (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
+              )
+              .join(' ')
+          : 'Unknown Company';
 
-          const title = titleElement
-            ? titleElement.textContent?.trim() || ''
-            : '';
-          const company = companyElement
-            ? companyElement.textContent?.trim() || ''
-            : '';
-
-          return {
-            title,
-            company,
-            url: jobUrl,
+        // Use href as key to avoid duplicates
+        if (!jobsMap.has(href)) {
+          jobsMap.set(href, {
+            title: linkText,
+            company: company,
+            url: href,
             source: 'welcometothejungle',
-          };
-        })
-        .filter((job) => job.title && job.company && job.url); // Filter out empty results
+          });
+        }
+      }
+
+      return Array.from(jobsMap.values());
     });
 
     await page.close();
@@ -219,31 +219,64 @@ export const getJobDescription = async (
         (el) => el.textContent?.trim() || ''
       );
     } else if (jobUrl.includes('welcometothejungle.com')) {
-      // Try multiple selectors for Welcome to the Jungle description
+      // Welcome to the Jungle: Look for the specific position section
       try {
-        await page.waitForSelector(
-          '[data-testid="job-description"], .sc-1g2uzm9-0, [class*="description"], .job-description, .sc-',
-          { timeout: 5000 }
-        );
-
-        // Try different selectors in order of preference for WTTJ
-        const descriptionElement =
-          (await page.$('[data-testid="job-description"]')) ||
-          (await page.$('.sc-1g2uzm9-0')) ||
-          (await page.$('[class*="description"]')) ||
-          (await page.$('.job-description')) ||
-          (await page.$('[class*="JobDescription"]'));
-
+        // Wait for the page to load completely
+        await page.waitForSelector('#the-position-section', { timeout: 15000 });
+        
+        const descriptionElement = await page.$('#the-position-section');
         if (descriptionElement) {
           description = await page.evaluate(
             (el) => el.textContent?.trim() || '',
             descriptionElement
           );
+          
+          if (description && description.length > 50) {
+            logger.debug(`✅ WTTJ: Found job description in #the-position-section (${description.length} chars)`);
+          } else {
+            logger.warn(`❌ WTTJ: #the-position-section found but content too short: ${description.length} chars`);
+          }
+        } else {
+          logger.warn(`❌ WTTJ: #the-position-section element not found for ${jobUrl}`);
         }
       } catch (selectorError) {
         logger.warn(
-          `Could not find job description with standard selectors for ${jobUrl}`
+          `❌ WTTJ: Could not find #the-position-section for ${jobUrl}:`,
+          selectorError instanceof Error ? selectorError.message : String(selectorError)
         );
+        
+        // Fallback to other selectors if the main one fails
+        try {
+          logger.info(`🔄 WTTJ: Trying fallback selectors for ${jobUrl}`);
+          const fallbackSelectors = [
+            '[data-testid="job-description"]',
+            '.sc-1g2uzm9-0', 
+            '[class*="description"]',
+            '.job-description',
+            '[class*="JobDescription"]',
+            'main [class*="content"]'
+          ];
+          
+          for (const selector of fallbackSelectors) {
+            const element = await page.$(selector);
+            if (element) {
+              description = await page.evaluate(
+                (el) => el.textContent?.trim() || '',
+                element
+              );
+              if (description && description.length > 50) {
+                logger.debug(`✅ WTTJ: Fallback success with ${selector} (${description.length} chars)`);
+                break;
+              }
+            }
+          }
+          
+          if (!description || description.length <= 50) {
+            logger.warn(`❌ WTTJ: All fallback selectors failed for ${jobUrl}`);
+          }
+        } catch (fallbackError) {
+          logger.error(`❌ WTTJ: Fallback error for ${jobUrl}:`, fallbackError);
+        }
       }
     }
 
@@ -278,15 +311,22 @@ export const removeDuplicateJobs = (jobs: JobPosting[]): JobPosting[] => {
  */
 export const enrichJobsWithDescriptions = async (
   browser: Browser,
-  jobs: JobPosting[],
-  maxJobs: number = 20
+  jobs: JobPosting[]
 ): Promise<JobPosting[]> => {
-  const jobsToEnrich = jobs.slice(0, maxJobs);
+  logger.info(`📄 Fetching descriptions for ${jobs.length} jobs...`);
 
-  for (let i = 0; i < jobsToEnrich.length; i++) {
-    const job = jobsToEnrich[i];
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i];
     if (job && job.url) {
+      logger.info(`📖 Fetching description ${i + 1}/${jobs.length}: ${job.title} at ${job.company}`);
       job.description = await getJobDescription(browser, job.url);
+      
+      if (job.description && job.description.length > 50) {
+        logger.debug(`✅ Got description (${job.description.length} chars) for ${job.title}`);
+      } else {
+        logger.warn(`❌ No/short description (${job.description?.length || 0} chars) for ${job.title}`);
+      }
+      
       // Add delay to be respectful to the servers
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
@@ -413,6 +453,10 @@ export const runWeeklyJobProcessing = async (
   try {
     logger.info('Starting weekly job processing...');
 
+    // Step 0: Purge existing jobs to prevent duplicates
+    logger.info('Step 0: Purging existing jobs from database...');
+    await purgeExistingJobs();
+
     // Step 1: Scrape from multiple sources
     logger.info('Step 1: Scraping jobs...');
     const [linkedInJobs, welcomeToTheJungleJobs] = await Promise.all([
@@ -458,6 +502,7 @@ export const runWeeklyJobProcessing = async (
 export default {
   createBrowser,
   closeBrowser,
+  purgeExistingJobs,
   scrapeLinkedIn,
   scrapeWelcomeToTheJungle,
   getJobDescription,
