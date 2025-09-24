@@ -136,6 +136,4 @@ export function getSearchParams(): SearchParams {
   };
 }
 
-
-
 export default config;
