@@ -1,0 +1,58 @@
+{
+  "name": "ai-job-hunter",
+  "version": "1.0.0",
+  "description": "AI-powered job hunting agent that searches, analyzes, and curates job postings",
+  "main": "dist/index.js",
+  "type": "module",
+  "packageManager": "yarn@4.0.0",
+  "scripts": {
+    "start": "yarn build && node dist/index.js",
+    "dev": "nodemon --exec \"yarn build && node dist/index.js\" --watch src --ext ts",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "weekly": "yarn build && node dist/index.js --weekly",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "clean": "rm -rf dist",
+    "install:deps": "yarn install"
+  },
+  "keywords": [
+    "job-hunting",
+    "ai",
+    "web-scraping",
+    "automation",
+    "email",
+    "nodejs",
+    "typescript"
+  ],
+  "author": "Sven Soldin",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "mongoose": "^8.18.1",
+    "puppeteer": "^22.0.0",
+    "validator": "^13.11.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^1.0.0",
+    "@types/handlebars": "^4.1.0",
+    "@types/jest": "^29.5.8",
+    "@types/mongoose": "^5.11.97",
+    "@types/node": "^20.10.0",
+    "@types/validator": "^13.11.7",
+    "@types/winston": "^2.4.4",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.55.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
