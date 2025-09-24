@@ -56,11 +56,6 @@ export interface AppConfig {
   email: EmailConfig;
   user: UserInfo;
   jobCriteria: UserCriteria;
-  schedule: {
-    scrapeExpression: string;
-    analyzeExpression: string;
-    timezone: string;
-  };
   scraping: {
     maxJobs: number;
     delayBetweenRequests: number;

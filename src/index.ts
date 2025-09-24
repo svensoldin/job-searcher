@@ -1,5 +1,3 @@
-import cron from 'node-cron';
-
 import {
   config,
   getSearchParams,
@@ -90,36 +88,7 @@ const runWeeklyJobs = async (): Promise<void> => {
   }
 };
 
-/**
- * Start the weekly job processing scheduler
- */
-const startScheduler = (): void => {
-  logger.info('Starting weekly job scheduler...');
-  logger.info(`Schedule: ${config.schedule.scrapeExpression}`);
-  logger.info(`Timezone: ${config.schedule.timezone}`);
 
-  // Weekly: Job Processing (scraping + analysis + saving)
-  cron.schedule(
-    config.schedule.scrapeExpression,
-    async () => {
-      logger.info('Scheduled weekly job processing triggered');
-      try {
-        await runWeeklyJobs();
-      } catch (error) {
-        logger.error('Scheduled weekly job processing failed:', error);
-      }
-    },
-    {
-      timezone: config.schedule.timezone,
-    }
-  );
-
-  logger.info('Weekly scheduler started successfully');
-  logger.info('📅 Schedule:');
-  logger.info(
-    '  Weekly: Scrape jobs from LinkedIn + Google Jobs, analyze with AI, and save to database'
-  );
-};
 
 /**
  * Handle graceful shutdown
@@ -143,31 +112,15 @@ const main = async (): Promise<void> => {
   try {
     await initializeServices();
 
-    // Parse command line arguments
-    const args: string[] = process.argv.slice(2);
-    console.log('📋 Command line arguments:', args);
-
-    if (args.includes('--weekly')) {
-      console.log('📅 Running weekly job processing...');
-      // Run weekly job processing
-      await runWeeklyJobs();
-      console.log('🏁 Weekly job processing completed');
-      process.exit(0);
-    } else {
-      // Scheduled mode (default)
-      startScheduler();
-
-      // Keep the process running
-      console.log(
-        'AI Job Hunter is running in scheduled mode. Press Ctrl+C to stop.'
-      );
-
-      // Handle graceful shutdown
-      process.on('SIGINT', () => handleShutdown('SIGINT'));
-      process.on('SIGTERM', () => handleShutdown('SIGTERM'));
-    }
+    console.log('� Running weekly job processing...');
+    await runWeeklyJobs();
+    console.log('🏁 Weekly job processing completed');
+    
+    await disconnectDatabase();
+    process.exit(0);
   } catch (error) {
     console.error('Application failed to start:', error);
+    await disconnectDatabase();
     process.exit(1);
   }
 };
@@ -176,7 +129,6 @@ const main = async (): Promise<void> => {
 export {
   initializeServices,
   runWeeklyJobs,
-  startScheduler,
   handleShutdown,
   main,
 };

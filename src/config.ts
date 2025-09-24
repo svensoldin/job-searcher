@@ -75,13 +75,6 @@ export const config: AppConfig = {
   user: userInfo,
   jobCriteria,
 
-  // Scheduling configuration (Dual Schedule)
-  schedule: {
-    scrapeExpression: process.env.CRON_SCHEDULE_SCRAPE || '0 9 * * 1', // Monday scraping
-    analyzeExpression: process.env.CRON_SCHEDULE_ANALYZE || '0 9 * * 2-5', // Tue-Fri analysis
-    timezone: process.env.TIMEZONE || 'America/New_York',
-  },
-
   // Scraping configuration
   scraping: {
     maxJobs: parseInteger(process.env.MAX_JOBS, 100),

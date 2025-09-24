@@ -53,15 +53,16 @@ A job hunting agent that automatically searches for job postings, analyzes them 
    npm run start -- --test
    ```
 
-5. **Run a single job hunt**
+5. **Run the weekly job processing**
 
    ```bash
-   npm run start -- --run-once
+   yarn start
    ```
 
-6. **Start scheduled mode** (runs weekly)
+   Or for development:
+
    ```bash
-   npm start
+   yarn dev
    ```
 
 ## ⚙️ Configuration
@@ -87,17 +88,14 @@ CORE_SKILLS=JavaScript,React,Node.js
 REMOTE_PREFERENCE=Remote preferred
 ```
 
-### Scheduling
+### Deployment
 
-The default schedule runs every Monday at 9 AM. Customize in `.env`:
+This application is designed to run as a one-shot process, perfect for Heroku Scheduler or similar cron services:
 
-```env
-# Cron expression (every Monday at 9 AM)
-CRON_SCHEDULE=0 9 * * 1
-
-# Your timezone
-TIMEZONE=America/New_York
-```
+- **Heroku**: Use Heroku Scheduler to run `yarn start` weekly
+- **AWS Lambda**: Deploy as a scheduled Lambda function
+- **GitHub Actions**: Use cron triggers in workflows
+- **Local Cron**: Add to your system's crontab
 
 ## License
 
