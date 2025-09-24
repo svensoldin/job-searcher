@@ -223,40 +223,48 @@ export const getJobDescription = async (
       try {
         // Wait for the page to load completely
         await page.waitForSelector('#the-position-section', { timeout: 15000 });
-        
+
         const descriptionElement = await page.$('#the-position-section');
         if (descriptionElement) {
           description = await page.evaluate(
             (el) => el.textContent?.trim() || '',
             descriptionElement
           );
-          
+
           if (description && description.length > 50) {
-            logger.debug(`✅ WTTJ: Found job description in #the-position-section (${description.length} chars)`);
+            logger.debug(
+              `✅ WTTJ: Found job description in #the-position-section (${description.length} chars)`
+            );
           } else {
-            logger.warn(`❌ WTTJ: #the-position-section found but content too short: ${description.length} chars`);
+            logger.warn(
+              `❌ WTTJ: #the-position-section found but content too short: ${description.length} chars`
+            );
           }
         } else {
-          logger.warn(`❌ WTTJ: #the-position-section element not found for ${jobUrl}`);
+          logger.warn(
+            `❌ WTTJ: #the-position-section element not found for ${jobUrl}`
+          );
         }
       } catch (selectorError) {
         logger.warn(
           `❌ WTTJ: Could not find #the-position-section for ${jobUrl}:`,
-          selectorError instanceof Error ? selectorError.message : String(selectorError)
+          selectorError instanceof Error
+            ? selectorError.message
+            : String(selectorError)
         );
-        
+
         // Fallback to other selectors if the main one fails
         try {
           logger.info(`🔄 WTTJ: Trying fallback selectors for ${jobUrl}`);
           const fallbackSelectors = [
             '[data-testid="job-description"]',
-            '.sc-1g2uzm9-0', 
+            '.sc-1g2uzm9-0',
             '[class*="description"]',
             '.job-description',
             '[class*="JobDescription"]',
-            'main [class*="content"]'
+            'main [class*="content"]',
           ];
-          
+
           for (const selector of fallbackSelectors) {
             const element = await page.$(selector);
             if (element) {
@@ -265,12 +273,14 @@ export const getJobDescription = async (
                 element
               );
               if (description && description.length > 50) {
-                logger.debug(`✅ WTTJ: Fallback success with ${selector} (${description.length} chars)`);
+                logger.debug(
+                  `✅ WTTJ: Fallback success with ${selector} (${description.length} chars)`
+                );
                 break;
               }
             }
           }
-          
+
           if (!description || description.length <= 50) {
             logger.warn(`❌ WTTJ: All fallback selectors failed for ${jobUrl}`);
           }
@@ -318,15 +328,25 @@ export const enrichJobsWithDescriptions = async (
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i];
     if (job && job.url) {
-      logger.info(`📖 Fetching description ${i + 1}/${jobs.length}: ${job.title} at ${job.company}`);
+      logger.info(
+        `📖 Fetching description ${i + 1}/${jobs.length}: ${job.title} at ${
+          job.company
+        }`
+      );
       job.description = await getJobDescription(browser, job.url);
-      
+
       if (job.description && job.description.length > 50) {
-        logger.debug(`✅ Got description (${job.description.length} chars) for ${job.title}`);
+        logger.debug(
+          `✅ Got description (${job.description.length} chars) for ${job.title}`
+        );
       } else {
-        logger.warn(`❌ No/short description (${job.description?.length || 0} chars) for ${job.title}`);
+        logger.warn(
+          `❌ No/short description (${
+            job.description?.length || 0
+          } chars) for ${job.title}`
+        );
       }
-      
+
       // Add delay to be respectful to the servers
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }

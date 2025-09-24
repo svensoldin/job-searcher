@@ -68,10 +68,6 @@ export const jobCriteria: UserCriteria = {
  * Application configuration
  */
 export const config: AppConfig = {
-  // AI API configuration
-  openaiApiKey: process.env.OPENAI_API_KEY || '', // Keep for legacy compatibility
-  huggingFaceApiKey: process.env.HUGGING_FACE_API_KEY || '',
-
   // Email configuration
   email: emailConfig,
 
@@ -140,17 +136,6 @@ export function getSearchParams(): SearchParams {
   };
 }
 
-/**
- * Environment check
- */
-export function checkEnvironment(): boolean {
-  try {
-    validateConfig();
-    return true;
-  } catch (error) {
-    console.error('Environment validation failed:', error);
-    return false;
-  }
-}
+
 
 export default config;

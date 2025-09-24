@@ -53,8 +53,6 @@ export interface EmailConfig {
 }
 
 export interface AppConfig {
-  openaiApiKey: string;
-  huggingFaceApiKey: string;
   email: EmailConfig;
   user: UserInfo;
   jobCriteria: UserCriteria;
@@ -82,7 +80,6 @@ export interface AppConfig {
 export interface AppState {
   isRunning: boolean;
   transporter: any; // nodemailer.Transporter
-  openaiClient: any; // OpenAI instance
 }
 
 // Utility types
