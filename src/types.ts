@@ -1,7 +1,3 @@
-/**
- * Core types for the AI Job Hunter application
- */
-
 export interface JobPosting {
   title: string;
   company: string;
@@ -32,40 +28,8 @@ export interface UserCriteria {
   excludedKeywords?: string[];
 }
 
-export interface UserInfo {
-  email: string;
-  name: string;
-}
-
-export interface EmailData {
-  jobs: JobPosting[];
-  totalJobs: number;
-  date: string;
-}
-
-export interface EmailConfig {
-  host: string;
-  port: number;
-  secure: boolean;
-  user: string;
-  password: string;
-  from: string;
-}
-
 export interface AppConfig {
-  email: EmailConfig;
-  user: UserInfo;
   jobCriteria: UserCriteria;
-  scraping: {
-    maxJobs: number;
-    delayBetweenRequests: number;
-    timeout: number;
-  };
-  analysis: {
-    maxJobsToAnalyze: number;
-    batchSize: number;
-    scoreThreshold: number;
-  };
   logging: {
     level: string;
     file: string;
