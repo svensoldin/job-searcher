@@ -1,6 +1,7 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
+
 import type { JobPosting } from 'types.js';
-import logger from 'utils/logger.js';
+import logger from '../../utils/logger.js';
 
 export const MAX_JOBS_PER_BOARD = 15;
 export const MAX_JOBS = 50;

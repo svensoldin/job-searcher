@@ -1,5 +1,5 @@
 import type { ScrapeCriteria } from '../../types.js';
-import { logger } from '../../utils/logger.js';
+import logger from '../../utils/logger.js';
 import { scrapeLinkedIn } from './linkedin/linkedin.js';
 import { closeBrowser, createBrowser } from './common.js';
 import scrapeWelcomeToTheJungle from './wttj.js';

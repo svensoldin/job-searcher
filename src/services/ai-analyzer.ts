@@ -1,4 +1,4 @@
-import { logger } from '../utils/logger.js';
+import logger from '../utils/logger.js';
 import { Mistral } from '@mistralai/mistralai';
 import dotenv from 'dotenv';
 
