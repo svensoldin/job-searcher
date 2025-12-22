@@ -3,11 +3,10 @@ import { Browser, Page } from 'puppeteer';
 import type { JobPosting, ScrapeCriteria } from 'types.js';
 import { logger } from 'utils/logger.js';
 import {
-  DELAY_BETWEEN_REQUESTS,
+  getJobDescription,
   initializePageAndNavigate,
   MAX_JOBS_PER_BOARD,
-  USER_AGENT,
-} from './utils.js';
+} from './common.js';
 
 const BASE_URL = 'https://www.welcometothejungle.com/fr/jobs';
 const PRIMARY_SELECTOR = '.ais-Hits-list-item';
@@ -59,75 +58,13 @@ export const getJobs = async (
   return jobs;
 };
 
-export const getJobDescriptions = async (
-  browser: Browser,
-  jobs: JobPosting[]
-): Promise<void> => {
-  logger.info(
-    `Fetching descriptions for ${jobs.length} Welcome to the Jungle jobs...`
-  );
-
-  for (let i = 0; i < jobs.length; i++) {
-    const job = jobs[i];
-    if (!job || !job.url) continue;
-
-    try {
-      logger.info(
-        `📖 Fetching WTTJ description ${i + 1}/${jobs.length}: ${job.title}`
-      );
-
-      const descPage = await browser.newPage();
-      await descPage.setUserAgent(USER_AGENT);
-
-      await descPage.goto(job.url, {
-        waitUntil: 'networkidle2',
-        timeout: 30000,
-      });
-
-      let description = '';
-      const selectors = [
-        '#the-position-section',
-        '[data-testid="job-description"]',
-        '.sc-1g2uzm9-0',
-        '[class*="description"]',
-        '.job-description',
-      ];
-
-      for (const selector of selectors) {
-        try {
-          await descPage.waitForSelector(selector, { timeout: 3000 });
-          description = await descPage.$eval(
-            selector,
-            (el) => el.textContent?.trim() || ''
-          );
-          if (description && description.length > 100) {
-            logger.info(
-              `✅ Found description with selector: ${selector} (${description.length} chars)`
-            );
-            break;
-          }
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        } catch (e) {
-          continue;
-        }
-      }
-
-      job.description = description;
-
-      if (!description || description.length < 100) {
-        logger.warn(`⚠️ No description found for: ${job.title}`);
-      }
-
-      await descPage.close();
-
-      await new Promise((resolve) =>
-        setTimeout(resolve, DELAY_BETWEEN_REQUESTS)
-      );
-    } catch (error) {
-      logger.error(`❌ Error fetching description for ${job.title}:`, error);
-    }
-  }
-};
+const WTTJ_DESCRIPTION_SELECTORS = [
+  '#the-position-section',
+  '[data-testid="job-description"]',
+  '.sc-1g2uzm9-0',
+  '[class*="description"]',
+  '.job-description',
+];
 
 export default async function scrapeWelcomeToTheJungle(
   browser: Browser,
@@ -159,7 +96,13 @@ export default async function scrapeWelcomeToTheJungle(
 
     logger.info(`Found ${jobs.length} Welcome to the Jungle jobs`);
 
-    await getJobDescriptions(browser, jobs);
+    logger.info(
+      `Fetching descriptions for ${jobs.length} Welcome to the Jungle jobs...`
+    );
+
+    for (const job of jobs) {
+      await getJobDescription(browser, job, WTTJ_DESCRIPTION_SELECTORS);
+    }
 
     logger.info(`Scraped ${jobs.length} jobs from Welcome to the Jungle`);
     return jobs;

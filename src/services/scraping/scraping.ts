@@ -1,13 +1,13 @@
-import type { JobPosting, ScrapeCriteria } from '../../types.js';
+import type { ScrapeCriteria } from '../../types.js';
 import { logger } from '../../utils/logger.js';
-import { scrapeLinkedIn } from './linkedin.js';
-import { closeBrowser, createBrowser } from './utils.js';
+import { scrapeLinkedIn } from './linkedin/linkedin.js';
+import { closeBrowser, createBrowser } from './common.js';
 import scrapeWelcomeToTheJungle from './wttj.js';
 
 export default async function scrapeJobsForAnalysis(
   criteria: ScrapeCriteria,
   onProgress?: (progress: number, message: string) => void
-): Promise<JobPosting[]> {
+) {
   const browser = await createBrowser();
 
   try {
