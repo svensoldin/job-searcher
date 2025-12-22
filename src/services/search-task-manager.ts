@@ -112,18 +112,15 @@ class SearchTaskManager {
     try {
       logger.info(`Processing search task ${task.id}`);
 
-      // Update status to processing
       task.status = 'processing';
       task.progress = 5;
       task.message = 'Starting job offer search...';
 
-      // Build scrape criteria from user criteria
       const scrapeCriteria: ScrapeCriteria = {
         jobTitle: task.criteria.jobTitle,
         location: task.criteria.location,
       };
 
-      // Scrape job offers from job boards
       task.progress = 10;
       task.message = 'Scraping job boards (LinkedIn, Welcome to the Jungle)...';
       logger.info(`Task ${task.id}: Starting to scrape job boards`);
@@ -137,11 +134,9 @@ class SearchTaskManager {
         }
       );
 
-      // Update progress after scraping completes
       task.progress = 70;
       task.message = `Scraped ${scrapedJobOffers.length} job offers`;
 
-      // Check if any job offers were found
       if (scrapedJobOffers.length === 0) {
         task.status = 'completed';
         task.progress = 100;
@@ -152,7 +147,6 @@ class SearchTaskManager {
         return;
       }
 
-      // Analyze and rank job offers with AI
       task.progress = 75;
       task.message = `Analyzing ${scrapedJobOffers.length} job offers with AI...`;
       logger.info(
@@ -171,7 +165,6 @@ class SearchTaskManager {
       );
 
       try {
-        // Update the search record with total jobs count
         const { error: updateError } = await supabase
           .from('job_searches')
           .update({ total_jobs: rankedJobOffers.length })
@@ -185,7 +178,6 @@ class SearchTaskManager {
           throw updateError;
         }
 
-        // Save job results
         if (rankedJobOffers.length > 0) {
           const jobResults: CreateJobResultInput[] = rankedJobOffers.map(
             (job) => ({
@@ -221,7 +213,6 @@ class SearchTaskManager {
         // Client can still see results via the task API
       }
 
-      // Task completed successfully
       task.status = 'completed';
       task.progress = 100;
       task.message = `Found ${rankedJobOffers.length} matching job offers`;
@@ -240,6 +231,25 @@ class SearchTaskManager {
       task.error =
         error instanceof Error ? error.message : 'Unknown error occurred';
       task.completedAt = new Date();
+
+      try {
+        const { error: failUpdateError } = await supabase
+          .from('job_searches')
+          .update({ total_jobs: -1 })
+          .eq('id', task.searchId);
+
+        if (failUpdateError) {
+          logger.warn(
+            `Task ${task.id}: Could not mark search record as failed (-1):`,
+            failUpdateError
+          );
+        }
+      } catch (statusErr) {
+        logger.warn(
+          `Task ${task.id}: Error while writing failed marker to DB:`,
+          statusErr
+        );
+      }
     }
   }
 
