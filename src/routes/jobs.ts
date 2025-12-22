@@ -1,5 +1,5 @@
 import { searchTaskManager } from '../services/search-task-manager.js';
-import { logger } from '../utils/logger.js';
+import logger from '../utils/logger.js';
 import { supabase, type CreateJobSearchInput } from '../lib/supabase.js';
 import express, { type Router } from 'express';
 

@@ -1,5 +1,5 @@
 import jobRoutes from './routes/jobs.js';
-import { logger } from './utils/logger.js';
+import logger from './utils/logger.js';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
